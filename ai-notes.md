@@ -2,6 +2,17 @@
 
 This document summarizes the key concepts and steps taken to set up a local AI development environment with full GPU acceleration on Linux (WSL) using Python, PyTorch, and CUDA. Each section includes background explanations, commands, and testing methods.
 
+## Table of Contents
+1. [Virtual Environments (`venv`)](#1-virtual-environments-venv)
+2. [Package Management: `pip`, `setuptools`, `wheel`](#2-package-management-pip-setuptools-wheel)
+3. [PyTorch](#3-pytorch)
+4. [CUDA and GPU Compatibility](#4-cuda-and-gpu-compatibility)
+5. [Testing PyTorch GPU Support](#5-testing-pytorch-gpu-support)
+6. [Version Checks and Utilities](#6-version-checks-and-utilities)
+7. [TorchVision and TorchAudio](#7-torchvision-and-torchaudio)
+8. [Notes on Nightly Builds](#8-notes-on-nightly-builds)
+9. [Summary of Key Learnings](#9-summary-of-key-learnings)
+
 ---
 
 ## 1. Virtual Environments (`venv`)
@@ -211,19 +222,4 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ---
 
-## 10. Next Steps
-
-Now that the environment is stable and GPU-accelerated:
-1. Initialize a GitHub repo for `ai-lab`.
-2. Add `.venv` to `.gitignore`.
-3. Commit the `ai-notes.md` and test scripts.
-4. Install Hugging Face libraries for model fine-tuning:
-   ```bash
-   pip install transformers datasets accelerate
-   ```
-5. Test a small inference script using a pretrained model.
-
----
-
 *Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080.*
-
