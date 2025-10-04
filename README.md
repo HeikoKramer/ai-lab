@@ -4,6 +4,7 @@
 This repository captures experiments, documentation, and planning artifacts for building and maintaining an AI development lab focused on GPU-accelerated workflows.
 
 ## Repository Contents
+- [AGENTS.md](./AGENTS.md) – Instructions for AI agents; every agent must read and follow these guidelines before contributing.
 - [ai-notes.md](./ai-notes.md) – Living documentation of lessons learned, command references, and verification scripts from the AI development journey.
 - [next-steps.md](./next-steps.md) – Current list of actionable follow-up tasks for the lab.
 

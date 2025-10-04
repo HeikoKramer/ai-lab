@@ -3,20 +3,25 @@
 This document summarizes the key concepts and steps taken to set up a local AI development environment with full GPU acceleration on Linux (WSL) using Python, PyTorch, and CUDA. Each section includes background explanations, commands, and testing methods.
 
 ## Table of Contents
-1. [Virtual Environments (`venv`)](#1-virtual-environments-venv)
-2. [Package Management: `pip`, `setuptools`, `wheel`](#2-package-management-pip-setuptools-wheel)
-3. [PyTorch](#3-pytorch)
-4. [CUDA and GPU Compatibility](#4-cuda-and-gpu-compatibility)
-5. [Testing PyTorch GPU Support](#5-testing-pytorch-gpu-support)
-6. [Version Checks and Utilities](#6-version-checks-and-utilities)
-7. [TorchVision and TorchAudio](#7-torchvision-and-torchaudio)
-8. [Notes on Nightly Builds](#8-notes-on-nightly-builds)
-9. [Summary of Key Learnings](#9-summary-of-key-learnings)
-10. [End-to-End Setup Blueprint](#10-end-to-end-setup-blueprint)
+1. [AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)](#ai-environment-setup-for-pytorch--cuda-128-rtx-5080)
+   - [1. Virtual Environments (`venv`)](#1-virtual-environments-venv)
+   - [2. Package Management: `pip`, `setuptools`, `wheel`](#2-package-management-pip-setuptools-wheel)
+   - [3. PyTorch](#3-pytorch)
+   - [4. CUDA and GPU Compatibility](#4-cuda-and-gpu-compatibility)
+   - [5. Testing PyTorch GPU Support](#5-testing-pytorch-gpu-support)
+   - [6. Version Checks and Utilities](#6-version-checks-and-utilities)
+   - [7. TorchVision and TorchAudio](#7-torchvision-and-torchaudio)
+   - [8. Notes on Nightly Builds](#8-notes-on-nightly-builds)
+   - [9. Summary of Key Learnings](#9-summary-of-key-learnings)
+2. [End-to-End Setup Blueprint](#end-to-end-setup-blueprint)
 
 ---
 
-## 1. Virtual Environments (`venv`)
+## AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)
+
+This chapter consolidates the foundational concepts required to build a GPU-enabled PyTorch environment on an RTX 5080 with CUDA 12.8 support.
+
+### 1. Virtual Environments (`venv`)
 
 **Purpose:**
 A *virtual environment* is an isolated Python workspace that keeps your project dependencies separate from the system-wide Python installation.
@@ -49,7 +54,7 @@ This confirms you are inside the virtual environment (notice the `.venv` prefix 
 
 ---
 
-## 2. Package Management: `pip`, `setuptools`, `wheel`
+### 2. Package Management: `pip`, `setuptools`, `wheel`
 
 **Purpose:**
 These are the essential tools for Python package installation.
@@ -69,7 +74,7 @@ This ensures compatibility with the latest library versions.
 
 ---
 
-## 3. PyTorch
+### 3. PyTorch
 
 **Purpose:**
 [PyTorch](https://pytorch.org/) is a machine learning framework widely used for deep learning and AI model development. It supports both CPU and GPU computations.
@@ -93,7 +98,7 @@ Nightly builds are often necessary to support new GPUs (like the RTX 5080).
 
 ---
 
-## 4. CUDA and GPU Compatibility
+### 4. CUDA and GPU Compatibility
 
 **CUDA** (Compute Unified Device Architecture) is NVIDIA’s framework that allows software (like PyTorch) to use GPUs for computation.
 
@@ -113,7 +118,7 @@ If your GPU shows as *unsupported*, upgrade to a newer CUDA toolkit or a nightly
 
 ---
 
-## 5. Testing PyTorch GPU Support
+### 5. Testing PyTorch GPU Support
 
 You can verify GPU detection and CUDA functionality with this script:
 
@@ -146,7 +151,7 @@ This confirms:
 
 ---
 
-## 6. Version Checks and Utilities
+### 6. Version Checks and Utilities
 
 **Check CUDA Toolkit Version:**
 ```bash
@@ -175,7 +180,7 @@ pip install --upgrade --pre torch torchvision torchaudio --index-url https://dow
 
 ---
 
-## 7. TorchVision and TorchAudio
+### 7. TorchVision and TorchAudio
 
 - **torchvision** adds prebuilt datasets (e.g., CIFAR, ImageNet), image transformations, and pretrained CNN models.
 - **torchaudio** provides similar functionality for audio datasets and signal processing.
@@ -196,7 +201,7 @@ torchaudio: 2.2.x
 
 ---
 
-## 8. Notes on Nightly Builds
+### 8. Notes on Nightly Builds
 
 - Nightly versions (`--pre`) are built automatically from the latest commits.
 - They may include early support for new GPUs or CUDA toolkits.
@@ -209,7 +214,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ---
 
-## 9. Summary of Key Learnings
+### 9. Summary of Key Learnings
 
 | Concept | Description |
 |----------|--------------|
@@ -223,7 +228,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ---
 
-## 10. End-to-End Setup Blueprint
+## End-to-End Setup Blueprint
 
 This chapter condenses the essential actions from Sections 1–9 into a practical workflow that can be followed from a clean system to a validated GPU-enabled PyTorch environment.
 
