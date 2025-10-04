@@ -14,7 +14,9 @@
 - Document the current understanding and key explanations from the AI development journey.
 - Focus on insights, commands, and verification steps rather than upcoming tasks.
 - Maintain a table of contents that links to the major sections.
+- Treat the "End-to-End Setup Blueprint" chapter as the stylistic reference for future additions; new chapters should match its concise, action-oriented tone and structure.
 
 ### next-steps.md
 - Record actionable next steps for the overall repository.
 - Keep entries current and remove items once completed or no longer relevant.
+- Mark completed items using Markdown strikethrough (e.g., `~~Task~~`). Items 1–3 are already completed and should remain crossed out.
