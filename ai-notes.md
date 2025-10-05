@@ -414,7 +414,21 @@ Loaders return Arrow-native blocks automatically, so you can treat each split li
 
 #### 5. Working with Partitions
 
-Splits are just logical partitions—you can define custom ratios when a dataset does not ship with your preferred breakdown:
+**What is a partition?**
+A *partition* is any subset of records that together form a complete, non-overlapping division of a dataset. The Hugging Face `DatasetDict` treats the familiar `train`, `validation`, and `test` splits as first-class partitions, but you can create as many additional groups as you need (for example, a `holdout` set for long-term regression testing or an `inference` slice for demo traffic).
+
+**Why partitions matter:**
+- They keep evaluation honest by ensuring models never see the held-out examples during training.
+- They let you tailor preprocessing: heavy augmentations might apply only to the training partition, while deterministic tokenization is shared across all partitions.
+- They support reproducibility; storing the slicing logic in code guarantees that teammates regenerate identical partitions.
+
+**Standard partitioning workflows:**
+1. **Named split selection** – Load the predefined partitions the dataset author published. This is the default when you call `load_dataset("<name>")`.
+2. **Percentage-based slicing** – Request custom ratios (e.g., 80/10/10) when the dataset ships as a single table. This is the most common option for personal or internal corpora.
+3. **Stratified sampling** – Balance the class distribution across partitions by filtering before you slice or by using `train_test_split` with the `stratify_by_column` argument.
+4. **Deterministic shards** – Fix a random seed so that partitions stay stable across runs, which is essential for comparing experiments over time.
+
+**Example: create percentage-based partitions**
 
 ```python
 custom = load_dataset(
@@ -428,7 +442,7 @@ custom = load_dataset(
 print({name: len(part) for name, part in custom.items()})
 ```
 
-Each partition behaves like a regular `Dataset`, so you can inspect schema metadata, iterate through examples, or combine subsets:
+Each partition behaves like a regular `Dataset`, so you can inspect schema metadata, iterate through examples, or combine subsets. For example, you can temporarily merge the training and validation partitions for a larger fine-tuning run, then re-separate them as needed:
 
 ```python
 from datasets import concatenate_datasets
@@ -440,7 +454,18 @@ print(train.column_names)
 print(merged.num_rows)
 ```
 
-This workflow keeps preprocessing centralized while enabling ad-hoc analysis (e.g., stratified splits, concatenated training sets, or evaluation-only subsets).
+When you need stratified or random splits, reach for the built-in helper:
+
+```python
+balanced = train.train_test_split(
+    test_size=0.2,
+    seed=42,
+    stratify_by_column="label",
+)
+print({name: len(part) for name, part in balanced.items()})
+```
+
+This workflow keeps preprocessing centralized while letting you express advanced partitioning strategies—random shuffles, class-balanced samples, or experiment-specific holdouts—directly in code.
 
 ---
 
