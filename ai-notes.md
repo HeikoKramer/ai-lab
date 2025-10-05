@@ -15,13 +15,20 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [9. Summary of Key Learnings](#9-summary-of-key-learnings)
    - [10. End-to-End Setup Blueprint](#10-end-to-end-setup-blueprint)
 2. [Working with Hugging Face](#working-with-hugging-face)
-   - [1. Transformers Overview](#1-transformers-overview)
-   - [2. Install the Library](#2-install-the-library)
-   - [3. Navigating the Model Hub](#3-navigating-the-model-hub)
-   - [4. Pipelines Quickstart](#4-pipelines-quickstart)
-   - [5. Pipeline Execution Internals](#5-pipeline-execution-internals)
-   - [6. Model Management and Caching](#6-model-management-and-caching)
-   - [7. Version Checks and Quick Tests](#7-version-checks-and-quick-tests)
+   - [Models](#models)
+     - [1. Transformers Overview](#1-transformers-overview)
+     - [2. Install the Library](#2-install-the-library)
+     - [3. Navigating the Model Hub](#3-navigating-the-model-hub)
+     - [4. Pipelines Quickstart](#4-pipelines-quickstart)
+     - [5. Pipeline Execution Internals](#5-pipeline-execution-internals)
+     - [6. Model Management and Caching](#6-model-management-and-caching)
+     - [7. Version Checks and Quick Tests](#7-version-checks-and-quick-tests)
+   - [Datasets](#datasets)
+     - [1. Load a Dataset](#1-load-a-dataset)
+     - [2. Standard Splits](#2-standard-splits)
+     - [3. Dataset Cards](#3-dataset-cards)
+     - [4. Apache Arrow Storage](#4-apache-arrow-storage)
+     - [5. Working with Partitions](#5-working-with-partitions)
 
 ---
 
@@ -256,7 +263,9 @@ Use this blueprint whenever you need a succinct, end-to-end reminder of the envi
 
 This chapter summarizes the key workflows for exploring models on Hugging Face and running inference with the `transformers` library.
 
-### 1. Transformers Overview
+### Models
+
+#### 1. Transformers Overview
 
 **Purpose:**
 The `transformers` library centralizes state-of-the-art Transformer architectures (e.g., GPT, BERT, T5, Whisper, Stable Diffusion) with ready-to-use APIs.
@@ -267,7 +276,7 @@ The `transformers` library centralizes state-of-the-art Transformer architecture
 - Running inference across CPUs and GPUs with device-aware optimizations.
 - Formatting and post-processing model outputs into human-readable results.
 
-### 2. Install the Library
+#### 2. Install the Library
 
 Install or upgrade to the latest release of `transformers`:
 
@@ -277,7 +286,7 @@ pip install --upgrade transformers
 
 This ensures you receive current model definitions, tokenizer updates, and pipeline improvements.
 
-### 3. Navigating the Model Hub
+#### 3. Navigating the Model Hub
 
 The **Models** tab on [huggingface.co](https://huggingface.co/models) is the central directory for community and official checkpoints.
 
@@ -286,7 +295,7 @@ The **Models** tab on [huggingface.co](https://huggingface.co/models) is the cen
 - Each **Model Card** provides: overview and intended use, example code snippets, evaluation metrics (per dataset or benchmark), training data references, licensing terms, and known limitations or ethical considerations.
 - KPIs to watch include download counts, likes, last modified date, supported tasks, and compatible libraries.
 
-### 4. Pipelines Quickstart
+#### 4. Pipelines Quickstart
 
 `pipeline` offers a high-level interface for rapid experimentation:
 
@@ -302,7 +311,7 @@ print(result[0]["generated_text"])
 - Accepts text, audio, or vision inputs depending on the pipeline type.
 - Returns structured outputs such as generated text, classification labels, or transcription segments.
 
-### 5. Pipeline Execution Internals
+#### 5. Pipeline Execution Internals
 
 When a pipeline runs, it orchestrates several steps:
 
@@ -312,14 +321,14 @@ When a pipeline runs, it orchestrates several steps:
 4. Streams the tensors through the model to produce logits and decoded outputs.
 5. Applies task-specific post-processing (e.g., text decoding, probability sorting, or audio chunk stitching).
 
-### 6. Model Management and Caching
+#### 6. Model Management and Caching
 
 - Authenticate once with `huggingface-cli login` to access private models or higher rate limits.
 - By default, models and tokenizers are cached under `~/.cache/huggingface`; reuse of the same model avoids repeated downloads.
 - Remove a directory within the cache to force a fresh download when updated weights are released.
 - Set the `HF_HOME` environment variable if you prefer a custom cache location.
 
-### 7. Version Checks and Quick Tests
+#### 7. Version Checks and Quick Tests
 
 Keep tooling aligned and validate that everything runs on the intended hardware:
 
@@ -348,6 +357,90 @@ print(output[0]["generated_text"])
 ```
 
 The first command synchronizes core dependencies, the second verifies PyTorch GPU support, and the final snippet confirms that a Hugging Face model can be loaded and executed locally.
+
+### Datasets
+
+#### 1. Load a Dataset
+
+**Purpose:**
+`datasets` lets you pull curated datasets from the Hugging Face Hub with a single call.
+
+**Command:**
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("TWI-RM/BIOMERT_Italian")
+print(type(dataset))
+```
+
+**Expected output:**
+```
+DatasetDict
+```
+
+The loader returns an Arrow-backed `DatasetDict` (splits as keys, `Dataset` objects as values) ready for inspection or iteration.
+
+#### 2. Standard Splits
+
+Most Hub datasets ship with named splits so you can immediately separate training and evaluation data.
+
+| Split | Primary use | Typical share |
+|-------|-------------|----------------|
+| `train` | Model fitting | 70–80% |
+| `validation` | Hyperparameter tuning and early stopping | 10–15% |
+| `test` | Final unbiased evaluation | 10–15% |
+
+You can load an individual split on demand:
+
+```python
+train = load_dataset("TWI-RM/BIOMERT_Italian", split="train")
+print(len(train))
+```
+
+#### 3. Dataset Cards
+
+Each dataset has a Dataset Card that documents the source, schema, licensing, and recommended uses. Read it before integrating a dataset to confirm label definitions, preprocessing steps, and ethical considerations. The card also links to benchmarks and related work that inform how to evaluate your model.
+
+#### 4. Apache Arrow Storage
+
+Hugging Face stores tables in Apache Arrow for fast columnar access:
+
+- Arrow is a binary column store that reads efficiently on CPU and GPU.
+- It is interoperable with frameworks like Pandas, PyTorch, and TensorFlow.
+- Datasets stream from disk via memory mapping, keeping the memory footprint low.
+- Reusing the same dataset does not require a reload because Arrow caching persists between sessions.
+
+Loaders return Arrow-native blocks automatically, so you can treat each split like an in-memory dataset while benefiting from lazy loading.
+
+#### 5. Working with Partitions
+
+Splits are just logical partitions—you can define custom ratios when a dataset does not ship with your preferred breakdown:
+
+```python
+custom = load_dataset(
+    "mc4",
+    split={
+        "train": "train[:90%]",
+        "validation": "train[90%:95%]",
+        "test": "train[95%:]",
+    },
+)
+print({name: len(part) for name, part in custom.items()})
+```
+
+Each partition behaves like a regular `Dataset`, so you can inspect schema metadata, iterate through examples, or combine subsets:
+
+```python
+from datasets import concatenate_datasets
+
+train = custom["train"]
+validation = custom["validation"]
+merged = concatenate_datasets([train, validation])
+print(train.column_names)
+print(merged.num_rows)
+```
+
+This workflow keeps preprocessing centralized while enabling ad-hoc analysis (e.g., stratified splits, concatenated training sets, or evaluation-only subsets).
 
 ---
 
