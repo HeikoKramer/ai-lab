@@ -13,8 +13,8 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [7. TorchVision and TorchAudio](#7-torchvision-and-torchaudio)
    - [8. Notes on Nightly Builds](#8-notes-on-nightly-builds)
    - [9. Summary of Key Learnings](#9-summary-of-key-learnings)
-2. [End-to-End Setup Blueprint](#end-to-end-setup-blueprint)
-3. [Working with Hugging Face](#working-with-hugging-face)
+   - [10. End-to-End Setup Blueprint](#10-end-to-end-setup-blueprint)
+2. [Working with Hugging Face](#working-with-hugging-face)
    - [1. Transformers Overview](#1-transformers-overview)
    - [2. Install the Library](#2-install-the-library)
    - [3. Navigating the Model Hub](#3-navigating-the-model-hub)
@@ -236,9 +236,9 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ---
 
-## End-to-End Setup Blueprint
+### 10. End-to-End Setup Blueprint
 
-This chapter condenses the essential actions from Sections 1–9 into a practical workflow that can be followed from a clean system to a validated GPU-enabled PyTorch environment.
+This subsection condenses the essential actions from Sections 1–9 into a practical workflow that can be followed from a clean system to a validated GPU-enabled PyTorch environment.
 
 1. **Prepare the workspace** by creating a project directory and activating a Python virtual environment to isolate dependencies and guarantee reproducibility.
 2. **Upgrade foundational packaging tools** (`pip`, `setuptools`, and `wheel`) to ensure compatibility with the latest binary distributions and to speed up installations.
