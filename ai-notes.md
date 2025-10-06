@@ -23,6 +23,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [5. Pipeline Execution Internals](#5-pipeline-execution-internals)
      - [6. Model Management and Caching](#6-model-management-and-caching)
      - [7. Version Checks and Quick Tests](#7-version-checks-and-quick-tests)
+     - [8. Task Selection and Model Matching](#8-task-selection-and-model-matching)
    - [Datasets](#datasets)
      - [1. Load a Dataset](#1-load-a-dataset)
      - [2. Standard Splits](#2-standard-splits)
@@ -50,6 +51,11 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Matching Models and Tokenizers](#3-matching-models-and-tokenizers)
      - [4. Uploading Artifacts to Hugging Face](#4-uploading-artifacts-to-hugging-face)
      - [5. Common Pitfalls Checklist](#5-common-pitfalls-checklist)
+3. [Document Q&A](#document-qa)
+   - [1. Concept Overview](#1-concept-overview)
+   - [2. Sample Scenario](#2-sample-scenario)
+   - [3. Build a Minimal Pipeline](#3-build-a-minimal-pipeline)
+   - [4. Verification Checklist](#4-verification-checklist)
 
 ---
 
@@ -378,6 +384,31 @@ print(output[0]["generated_text"])
 ```
 
 The first command synchronizes core dependencies, the second verifies PyTorch GPU support, and the final snippet confirms that a Hugging Face model can be loaded and executed locally.
+
+#### 8. Task Selection and Model Matching
+
+**Purpose:**
+Reduce guesswork when choosing a checkpoint by mapping your use case to the right task, filtering the Hub effectively, and validating that the model meets latency and accuracy expectations.
+
+**Common tasks and starter checkpoints:**
+
+| Task | Typical Input/Output | Lightweight baseline | High-capacity option |
+| --- | --- | --- | --- |
+| `text-generation` | Prompt → extended narrative | `distilgpt2` (fast CPU inference) | `meta-llama/Meta-Llama-3-8B-Instruct` (better reasoning) |
+| `question-answering` | Context passage + question → answer span | `distilbert-base-cased-distilled-squad` | `deepset/roberta-base-squad2` |
+| `summarization` | Long article → concise abstract | `sshleifer/distilbart-cnn-12-6` | `facebook/bart-large-cnn` |
+| `translation` | Source language text → target language text | `Helsinki-NLP/opus-mt-de-en` | `facebook/nllb-200-distilled-600M` |
+| `sentence-similarity` | Pair of texts → similarity score | `sentence-transformers/all-MiniLM-L6-v2` | `sentence-transformers/all-mpnet-base-v2` |
+
+**Selection checklist:**
+
+1. **Define the task category** before browsing. The Hub’s task filter mirrors the `pipeline` task argument, so locking this down narrows results instantly.
+2. **Set constraints** on model size, quantization format, and hardware (CPU vs. GPU vs. MPS). Smaller distilled models keep latency low; larger instruction-tuned checkpoints improve accuracy at the cost of memory.
+3. **Compare evaluation metrics** in the model card (e.g., F1 for QA, ROUGE for summarization). Favor models evaluated on datasets that resemble your target domain.
+4. **Review training data and licenses** to ensure compliance with your deployment scenario, especially for commercial or proprietary contexts.
+5. **Prototype with a pipeline** using the short-listed model to validate answers on your own samples. Measure runtime and output quality before promoting it to production.
+
+**Tip:** Save curated model shortlists in a shared note or spreadsheet with columns for task, model ID, parameters, eval metrics, and qualitative observations. This institutional memory speeds up future evaluations.
 
 ### Datasets
 
@@ -843,4 +874,73 @@ When you train a model locally (as an individual, a company, or a research lab),
 
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, and text summarization techniques.*
+## Document Q&A
+
+### 1. Concept Overview
+
+- **Objective:** Answer natural-language questions by grounding responses in source documents such as PDFs, manuals, or policy guides.
+- **Inputs:** A reference document (often chunked into passages) and a user question.
+- **Output:** A concise answer plus optional metadata (confidence score, source span) that points back to the document.
+- **Why it matters:** Document-grounded answers reduce hallucinations and keep HR, finance, or support teams aligned with approved content.
+
+### 2. Sample Scenario
+
+Imagine an internal HR handbook stored as a PDF. After text extraction, one page contains the following passage:
+
+```
+US-Employee_Policy.pdf — Page 7
+--------------------------------------------------
+Annual volunteer day program
+• Each full-time employee is eligible for 12 hours of volunteer time off per calendar year.
+• Requests must be submitted two weeks in advance through the HR portal.
+• Managers will confirm coverage needs before approvals are issued.
+```
+
+If an employee asks, "How many volunteer hours do we receive each year?", the answer should be verifiable against the highlighted bullet.
+
+### 3. Build a Minimal Pipeline
+
+```python
+from transformers import pipeline
+
+qa_pipeline = pipeline(
+    task="question-answering",
+    model="distilbert-base-cased-distilled-squad",
+)
+
+context = (
+    "Annual volunteer day program. "
+    "Each full-time employee is eligible for 12 hours of volunteer time off per calendar year. "
+    "Requests must be submitted two weeks in advance through the HR portal. "
+    "Managers will confirm coverage needs before approvals are issued."
+)
+
+question = "How many volunteer hours do we receive each year?"
+
+result = qa_pipeline(question=question, context=context)
+
+print("Answer:", result["answer"])
+print("Confidence:", round(result["score"], 3))
+```
+
+**What to expect:**
+
+```
+Answer: 12 hours
+Confidence: 0.842
+```
+
+The model extracts the phrase "12 hours" because it matches the question’s semantics and appears in the provided context segment.
+
+### 4. Verification Checklist
+
+1. **Traceability:** Confirm that the predicted answer text exactly matches a span in the extracted passage. Here, "12 hours" aligns with the second bullet in the PDF excerpt.
+2. **Context coverage:** Ensure the context string contains all sentences needed to interpret the question. Add surrounding bullets or headings when meaning could be ambiguous.
+3. **Chunking strategy:** For long PDFs, split pages or sections into overlapping chunks (~200–400 tokens) and feed each chunk to the pipeline before selecting the highest-scoring answer.
+4. **Model suitability:** If answers sound uncertain or hallucinated, try a larger QA model (e.g., `deepset/roberta-base-squad2`) or fine-tune on domain-specific Q&A pairs.
+5. **Human validation:** Keep a manual review step for high-impact answers so stakeholders can compare the model output with the authoritative source.
+
+
+---
+
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, and document question-answering patterns.*
