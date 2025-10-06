@@ -35,6 +35,15 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [3. Question-Answering Natural Language Inference (QNLI)](#3-question-answering-natural-language-inference-qnli)
    - [4. Dynamic Category Assignment](#4-dynamic-category-assignment)
    - [5. Challenges of Text Classification](#5-challenges-of-text-classification)
+4. [Text Summarization](#text-summarization)
+   - [1. Summarization Overview](#1-summarization-overview)
+   - [2. Extractive vs. Abstractive Approaches](#2-extractive-vs-abstractive-approaches)
+   - [3. Use Cases for Extractive Summarization](#3-use-cases-for-extractive-summarization)
+   - [4. Extractive Summarization in Action](#4-extractive-summarization-in-action)
+   - [5. Use Cases for Abstractive Summarization](#5-use-cases-for-abstractive-summarization)
+   - [6. Abstractive Summarization in Action](#6-abstractive-summarization-in-action)
+   - [7. Controlling Summary Length with Token Parameters](#7-controlling-summary-length-with-token-parameters)
+   - [8. Interpreting Token Length Effects](#8-interpreting-token-length-effects)
 
 ---
 
@@ -601,4 +610,139 @@ Text classifiers must contend with several linguistic hurdles:
 
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, and key text classification pipelines.*
+## Text Summarization
+
+This chapter demonstrates how Hugging Face pipelines condense source text into shorter narratives, contrasting extractive and abstractive workflows and highlighting how token parameters influence output length.
+
+### 1. Summarization Overview
+
+**Purpose:** Reduce lengthy passages to focused summaries that preserve the key message while omitting redundant or tangential details.
+
+**Process:**
+- Accept full sentences or short paragraphs as input.
+- Compress them into concise statements or bullet-style highlights.
+- Maintain factual accuracy so downstream teams can make decisions quickly.
+
+### 2. Extractive vs. Abstractive Approaches
+
+| Approach     | How it works                                                      | Strengths                                       | Considerations                                |
+|--------------|-------------------------------------------------------------------|-------------------------------------------------|-----------------------------------------------|
+| Extractive   | Selects the most informative sentences directly from the source.  | Fast, factual, minimal hallucination risk.      | May keep awkward phrasing or irrelevant detail |
+| Abstractive  | Generates new text that paraphrases the source content.           | Fluent, coherent, adapts to narrative tone.     | Requires guardrails to avoid fabrication       |
+
+### 3. Use Cases for Extractive Summarization
+
+- **Legal brief triage:** Surface pivotal clauses so attorneys can skim precedence quickly.
+- **Financial alerts:** Lift sentences describing revenue swings or guidance updates for analysts.
+
+### 4. Extractive Summarization in Action
+
+```python
+from transformers import pipeline
+
+summarizer = pipeline("summarization", model="myamuda/extractive-summarization")
+
+text = (
+    "City council members met for a short session to approve the river cleanup budget. "
+    "They highlighted that volunteer turnout doubled compared to last year, "
+    "and the plan prioritizes removing plastic debris along the south bank."
+)
+
+summary = summarizer(text)
+print(summary[0]["summary_text"])
+```
+
+**Expected output:**
+
+```
+City council members met for a short session to approve the river cleanup budget.
+```
+
+**Interpretation:** The extractive pipeline selects the most informative sentence verbatim, preserving factual wording from the source paragraph.
+
+### 5. Use Cases for Abstractive Summarization
+
+- **News digests:** Provide concise recaps of local events without repeating the entire article.
+- **Content recommendations:** Rephrase long-form reviews into short hooks for readers.
+
+### 6. Abstractive Summarization in Action
+
+```python
+from transformers import pipeline
+
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+
+text = (
+    "The neighborhood gardening club planted a pollinator garden beside the library. "
+    "Volunteers logged the soil quality, chose low-maintenance flowers, and scheduled "
+    "weekly watering shifts so families can learn about native plants."
+)
+
+summary = summarizer(text)
+print(summary[0]["summary_text"])
+```
+
+**Expected output:**
+
+```
+The club organized a pollinator garden project near the library and set up a family-friendly maintenance plan.
+```
+
+**Interpretation:** The abstractive pipeline rewrites the source into a fluent sentence that blends the key actions into a single narrative.
+
+### 7. Controlling Summary Length with Token Parameters
+
+```python
+from transformers import pipeline
+
+summarizer = pipeline(
+    task="summarization",
+    model="sshleifer/distilbart-cnn-12-6",
+    min_new_tokens=15,
+    max_new_tokens=40,
+)
+
+text = (
+    "A high school robotics club built a solar-powered rover for the science expo. "
+    "Students documented the build process, trained volunteers to operate the rover, "
+    "and presented test results that showed longer battery life than last year's design."
+)
+
+medium_summary = summarizer(text)[0]["summary_text"]
+
+shorter_summary = pipeline(
+    task="summarization",
+    model="sshleifer/distilbart-cnn-12-6",
+    min_new_tokens=5,
+    max_new_tokens=15,
+)(text)[0]["summary_text"]
+
+longer_summary = pipeline(
+    task="summarization",
+    model="sshleifer/distilbart-cnn-12-6",
+    min_new_tokens=30,
+    max_new_tokens=60,
+)(text)[0]["summary_text"]
+
+print("Medium:", medium_summary)
+print("Shorter:", shorter_summary)
+print("Longer:", longer_summary)
+```
+
+**Expected output:**
+
+```
+Medium: The robotics club built a solar-powered rover, trained volunteers, and reported longer battery life than last year.
+Shorter: Students built a solar rover and proved it lasts longer.
+Longer: Students in the robotics club built a solar-powered rover, documented each step, trained volunteers to drive it, and shared test data showing the new model outperforms last year's design.
+```
+
+### 8. Interpreting Token Length Effects
+
+- **Shorter setting:** Lower `min_new_tokens` and `max_new_tokens` force a brief highlight at the expense of nuance.
+- **Medium setting:** Balanced token bounds retain the main actions without unnecessary detail.
+- **Longer setting:** Higher token limits allow the model to elaborate on supporting context while staying within the summarization scope.
+
+---
+
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, and text summarization techniques.*
