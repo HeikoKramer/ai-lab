@@ -792,7 +792,20 @@ Long: Students in the robotics club built a solar-powered rover, documented each
 
 #### 2. Sample Scenario
 
-Imagine an internal HR handbook stored as a PDF. After text extraction, one page contains the following passage:
+Imagine an internal HR handbook stored as a PDF. We will work with a file named `US-Employee_Policy.pdf`, where page 7 contains the volunteer-time policy. Before we can pass the content to a QA model, we need to extract the text from the PDF and confirm exactly which page holds the relevant paragraph.
+
+```python
+from pypdf import PdfReader
+
+reader = PdfReader("US-Employee_Policy.pdf")
+page_number = 6  # zero-based index; page 7 in the printed handbook
+document_text = reader.pages[page_number].extract_text()
+
+print(f"US-Employee_Policy.pdf — Page {page_number + 1}\n" + "-" * 50)
+print(document_text)
+```
+
+The output confirms that page 7 includes the passage we need:
 
 ```
 US-Employee_Policy.pdf — Page 7
@@ -803,7 +816,12 @@ Annual volunteer day program
 • Managers will confirm coverage needs before approvals are issued.
 ```
 
-If an employee asks, "How many volunteer hours do we receive each year?", the answer should be verifiable against the highlighted bullet.
+This extraction step matters for two reasons:
+
+1. **Traceability:** When HR reviews the answer later, they can open the PDF to page 7 and verify the wording line by line.
+2. **Reliable preprocessing:** QA pipelines depend on clean, machine-readable text. Automating the PDF-to-text step avoids manual copy/paste errors and keeps long documents searchable.
+
+If an employee asks, "How many volunteer hours do we receive each year?", the answer should be verifiable against the highlighted bullet. With the `document_text` string captured above, we can now feed the exact PDF content into a QA pipeline.
 
 #### 3. Build a Minimal Pipeline
 
@@ -815,12 +833,7 @@ qa_pipeline = pipeline(
     model="distilbert-base-cased-distilled-squad",
 )
 
-context = (
-    "Annual volunteer day program. "
-    "Each full-time employee is eligible for 12 hours of volunteer time off per calendar year. "
-    "Requests must be submitted two weeks in advance through the HR portal. "
-    "Managers will confirm coverage needs before approvals are issued."
-)
+context = document_text
 
 question = "How many volunteer hours do we receive each year?"
 
