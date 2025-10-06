@@ -45,17 +45,17 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [6. Abstractive Summarization in Action](#6-abstractive-summarization-in-action)
      - [7. Controlling Summary Length with Token Parameters](#7-controlling-summary-length-with-token-parameters)
      - [8. Interpreting Token Length Effects](#8-interpreting-token-length-effects)
+   - [Document Q&A](#document-qa)
+     - [1. Concept Overview](#1-concept-overview)
+     - [2. Sample Scenario](#2-sample-scenario)
+     - [3. Build a Minimal Pipeline](#3-build-a-minimal-pipeline)
+     - [4. Verification Checklist](#4-verification-checklist)
    - [Auto Models and Tokenizers](#auto-models-and-tokenizers)
      - [1. AutoModel Essentials](#1-automodel-essentials)
      - [2. AutoTokenizer Workflow](#2-autotokenizer-workflow)
      - [3. Matching Models and Tokenizers](#3-matching-models-and-tokenizers)
      - [4. Uploading Artifacts to Hugging Face](#4-uploading-artifacts-to-hugging-face)
      - [5. Common Pitfalls Checklist](#5-common-pitfalls-checklist)
-3. [Document Q&A](#document-qa)
-   - [1. Concept Overview](#1-concept-overview)
-   - [2. Sample Scenario](#2-sample-scenario)
-   - [3. Build a Minimal Pipeline](#3-build-a-minimal-pipeline)
-   - [4. Verification Checklist](#4-verification-checklist)
 
 ---
 
@@ -781,6 +781,74 @@ Long: Students in the robotics club built a solar-powered rover, documented each
 
 ---
 
+### Document Q&A
+
+#### 1. Concept Overview
+
+- **Objective:** Answer natural-language questions by grounding responses in source documents such as PDFs, manuals, or policy guides.
+- **Inputs:** A reference document (often chunked into passages) and a user question.
+- **Output:** A concise answer plus optional metadata (confidence score, source span) that points back to the document.
+- **Why it matters:** Document-grounded answers reduce hallucinations and keep HR, finance, or support teams aligned with approved content.
+
+#### 2. Sample Scenario
+
+Imagine an internal HR handbook stored as a PDF. After text extraction, one page contains the following passage:
+
+```
+US-Employee_Policy.pdf — Page 7
+--------------------------------------------------
+Annual volunteer day program
+• Each full-time employee is eligible for 12 hours of volunteer time off per calendar year.
+• Requests must be submitted two weeks in advance through the HR portal.
+• Managers will confirm coverage needs before approvals are issued.
+```
+
+If an employee asks, "How many volunteer hours do we receive each year?", the answer should be verifiable against the highlighted bullet.
+
+#### 3. Build a Minimal Pipeline
+
+```python
+from transformers import pipeline
+
+qa_pipeline = pipeline(
+    task="question-answering",
+    model="distilbert-base-cased-distilled-squad",
+)
+
+context = (
+    "Annual volunteer day program. "
+    "Each full-time employee is eligible for 12 hours of volunteer time off per calendar year. "
+    "Requests must be submitted two weeks in advance through the HR portal. "
+    "Managers will confirm coverage needs before approvals are issued."
+)
+
+question = "How many volunteer hours do we receive each year?"
+
+result = qa_pipeline(question=question, context=context)
+
+print("Answer:", result["answer"])
+print("Confidence:", round(result["score"], 3))
+```
+
+**What to expect:**
+
+```
+Answer: 12 hours
+Confidence: 0.842
+```
+
+The model extracts the phrase "12 hours" because it matches the question’s semantics and appears in the provided context segment.
+
+#### 4. Verification Checklist
+
+1. **Traceability:** Confirm that the predicted answer text exactly matches a span in the extracted passage. Here, "12 hours" aligns with the second bullet in the PDF excerpt.
+2. **Context coverage:** Ensure the context string contains all sentences needed to interpret the question. Add surrounding bullets or headings when meaning could be ambiguous.
+3. **Chunking strategy:** For long PDFs, split pages or sections into overlapping chunks (~200–400 tokens) and feed each chunk to the pipeline before selecting the highest-scoring answer.
+4. **Model suitability:** If answers sound uncertain or hallucinated, try a larger QA model (e.g., `deepset/roberta-base-squad2`) or fine-tune on domain-specific Q&A pairs.
+5. **Human validation:** Keep a manual review step for high-impact answers so stakeholders can compare the model output with the authoritative source.
+
+---
+
 ### Auto Models and Tokenizers
 
 This chapter translates the automatic class machinery in `transformers` into actionable steps. Auto classes remove guesswork when pairing checkpoints with the exact Python implementations that know how to run them.
@@ -874,73 +942,5 @@ When you train a model locally (as an individual, a company, or a research lab),
 
 ---
 
-## Document Q&A
-
-### 1. Concept Overview
-
-- **Objective:** Answer natural-language questions by grounding responses in source documents such as PDFs, manuals, or policy guides.
-- **Inputs:** A reference document (often chunked into passages) and a user question.
-- **Output:** A concise answer plus optional metadata (confidence score, source span) that points back to the document.
-- **Why it matters:** Document-grounded answers reduce hallucinations and keep HR, finance, or support teams aligned with approved content.
-
-### 2. Sample Scenario
-
-Imagine an internal HR handbook stored as a PDF. After text extraction, one page contains the following passage:
-
-```
-US-Employee_Policy.pdf — Page 7
---------------------------------------------------
-Annual volunteer day program
-• Each full-time employee is eligible for 12 hours of volunteer time off per calendar year.
-• Requests must be submitted two weeks in advance through the HR portal.
-• Managers will confirm coverage needs before approvals are issued.
-```
-
-If an employee asks, "How many volunteer hours do we receive each year?", the answer should be verifiable against the highlighted bullet.
-
-### 3. Build a Minimal Pipeline
-
-```python
-from transformers import pipeline
-
-qa_pipeline = pipeline(
-    task="question-answering",
-    model="distilbert-base-cased-distilled-squad",
-)
-
-context = (
-    "Annual volunteer day program. "
-    "Each full-time employee is eligible for 12 hours of volunteer time off per calendar year. "
-    "Requests must be submitted two weeks in advance through the HR portal. "
-    "Managers will confirm coverage needs before approvals are issued."
-)
-
-question = "How many volunteer hours do we receive each year?"
-
-result = qa_pipeline(question=question, context=context)
-
-print("Answer:", result["answer"])
-print("Confidence:", round(result["score"], 3))
-```
-
-**What to expect:**
-
-```
-Answer: 12 hours
-Confidence: 0.842
-```
-
-The model extracts the phrase "12 hours" because it matches the question’s semantics and appears in the provided context segment.
-
-### 4. Verification Checklist
-
-1. **Traceability:** Confirm that the predicted answer text exactly matches a span in the extracted passage. Here, "12 hours" aligns with the second bullet in the PDF excerpt.
-2. **Context coverage:** Ensure the context string contains all sentences needed to interpret the question. Add surrounding bullets or headings when meaning could be ambiguous.
-3. **Chunking strategy:** For long PDFs, split pages or sections into overlapping chunks (~200–400 tokens) and feed each chunk to the pipeline before selecting the highest-scoring answer.
-4. **Model suitability:** If answers sound uncertain or hallucinated, try a larger QA model (e.g., `deepset/roberta-base-squad2`) or fine-tune on domain-specific Q&A pairs.
-5. **Human validation:** Keep a manual review step for high-impact answers so stakeholders can compare the model output with the authoritative source.
-
-
----
 
 *Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, and document question-answering patterns.*
