@@ -23,6 +23,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [5. Pipeline Execution Internals](#5-pipeline-execution-internals)
      - [6. Model Management and Caching](#6-model-management-and-caching)
      - [7. Version Checks and Quick Tests](#7-version-checks-and-quick-tests)
+   - [Datasets](#datasets)
+     - [1. Load a Dataset](#1-load-a-dataset)
+     - [2. Standard Splits](#2-standard-splits)
+     - [3. Dataset Cards](#3-dataset-cards)
+     - [4. Apache Arrow Storage](#4-apache-arrow-storage)
+     - [5. Working with Partitions](#5-working-with-partitions)
    - [Text Classification](#text-classification)
      - [1. Sentiment Analysis](#1-sentiment-analysis)
      - [2. Grammatical Correctness](#2-grammatical-correctness)
@@ -44,12 +50,6 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Matching Models and Tokenizers](#3-matching-models-and-tokenizers)
      - [4. Uploading Artifacts to Hugging Face](#4-uploading-artifacts-to-hugging-face)
      - [5. Common Pitfalls Checklist](#5-common-pitfalls-checklist)
-   - [Datasets](#datasets)
-     - [1. Load a Dataset](#1-load-a-dataset)
-     - [2. Standard Splits](#2-standard-splits)
-     - [3. Dataset Cards](#3-dataset-cards)
-     - [4. Apache Arrow Storage](#4-apache-arrow-storage)
-     - [5. Working with Partitions](#5-working-with-partitions)
 
 ---
 
@@ -378,6 +378,116 @@ print(output[0]["generated_text"])
 ```
 
 The first command synchronizes core dependencies, the second verifies PyTorch GPU support, and the final snippet confirms that a Hugging Face model can be loaded and executed locally.
+
+### Datasets
+
+#### 1. Load a Dataset
+
+**Purpose:**
+`datasets` lets you pull curated datasets from the Hugging Face Hub with a single call.
+
+**Command:**
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("TWI-RM/BIOMERT_Italian")
+print(type(dataset))
+```
+
+**Expected output:**
+```
+DatasetDict
+```
+
+The loader returns an Arrow-backed `DatasetDict` (splits as keys, `Dataset` objects as values) ready for inspection or iteration.
+
+#### 2. Standard Splits
+
+Most Hub datasets ship with named splits so you can immediately separate training and evaluation data.
+
+| Split | Primary use | Typical share |
+|-------|-------------|----------------|
+| `train` | Model fitting | 70–80% |
+| `validation` | Hyperparameter tuning and early stopping | 10–15% |
+| `test` | Final unbiased evaluation | 10–15% |
+
+You can load an individual split on demand:
+
+```python
+train = load_dataset("TWI-RM/BIOMERT_Italian", split="train")
+print(len(train))
+```
+
+#### 3. Dataset Cards
+
+Each dataset has a Dataset Card that documents the source, schema, licensing, and recommended uses. Read it before integrating a dataset to confirm label definitions, preprocessing steps, and ethical considerations. The card also links to benchmarks and related work that inform how to evaluate your model.
+
+#### 4. Apache Arrow Storage
+
+Hugging Face stores tables in Apache Arrow for fast columnar access:
+
+- Arrow is a binary column store that reads efficiently on CPU and GPU.
+- It is interoperable with frameworks like Pandas, PyTorch, and TensorFlow.
+- Datasets stream from disk via memory mapping, keeping the memory footprint low.
+- Reusing the same dataset does not require a reload because Arrow caching persists between sessions.
+
+Loaders return Arrow-native blocks automatically, so you can treat each split like an in-memory dataset while benefiting from lazy loading.
+
+#### 5. Working with Partitions
+
+**What is a partition?**
+A *partition* is any subset of records that together form a complete, non-overlapping division of a dataset. The Hugging Face `DatasetDict` treats the familiar `train`, `validation`, and `test` splits as first-class partitions, but you can create as many additional groups as you need (for example, a `holdout` set for long-term regression testing or an `inference` slice for demo traffic).
+
+**Why partitions matter:**
+- They keep evaluation honest by ensuring models never see the held-out examples during training.
+- They let you tailor preprocessing: heavy augmentations might apply only to the training partition, while deterministic tokenization is shared across all partitions.
+- They support reproducibility; storing the slicing logic in code guarantees that teammates regenerate identical partitions.
+
+**Standard partitioning workflows:**
+1. **Named split selection** – Load the predefined partitions the dataset author published. This is the default when you call `load_dataset("<name>")`.
+2. **Percentage-based slicing** – Request custom ratios (e.g., 80/10/10) when the dataset ships as a single table. This is the most common option for personal or internal corpora.
+3. **Stratified sampling** – Balance the class distribution across partitions by filtering before you slice or by using `train_test_split` with the `stratify_by_column` argument.
+4. **Deterministic shards** – Fix a random seed so that partitions stay stable across runs, which is essential for comparing experiments over time.
+
+**Example: create percentage-based partitions**
+
+```python
+custom = load_dataset(
+    "mc4",
+    split={
+        "train": "train[:90%]",
+        "validation": "train[90%:95%]",
+        "test": "train[95%:]",
+    },
+)
+print({name: len(part) for name, part in custom.items()})
+```
+
+Each partition behaves like a regular `Dataset`, so you can inspect schema metadata, iterate through examples, or combine subsets. For example, you can temporarily merge the training and validation partitions for a larger fine-tuning run, then re-separate them as needed:
+
+```python
+from datasets import concatenate_datasets
+
+train = custom["train"]
+validation = custom["validation"]
+merged = concatenate_datasets([train, validation])
+print(train.column_names)
+print(merged.num_rows)
+```
+
+When you need stratified or random splits, reach for the built-in helper:
+
+```python
+balanced = train.train_test_split(
+    test_size=0.2,
+    seed=42,
+    stratify_by_column="label",
+)
+print({name: len(part) for name, part in balanced.items()})
+```
+
+This workflow keeps preprocessing centralized while letting you express advanced partitioning strategies—random shuffles, class-balanced samples, or experiment-specific holdouts—directly in code.
+
 
 ### Text Classification
 
@@ -730,114 +840,6 @@ When you train a model locally (as an individual, a company, or a research lab),
 | Missing files when pushing to Hub | Model card shows "Tokenizer missing" or "Config missing" warnings. | Include tokenizer configuration files and rerun `huggingface-cli upload`. |
 | Custom special tokens ignored | Generation outputs skip task-specific markers. | Call `tokenizer.add_special_tokens(...)` **before** resizing the model embeddings and retraining/fine-tuning. |
 
-### Datasets
-
-#### 1. Load a Dataset
-
-**Purpose:**
-`datasets` lets you pull curated datasets from the Hugging Face Hub with a single call.
-
-**Command:**
-```python
-from datasets import load_dataset
-
-dataset = load_dataset("TWI-RM/BIOMERT_Italian")
-print(type(dataset))
-```
-
-**Expected output:**
-```
-DatasetDict
-```
-
-The loader returns an Arrow-backed `DatasetDict` (splits as keys, `Dataset` objects as values) ready for inspection or iteration.
-
-#### 2. Standard Splits
-
-Most Hub datasets ship with named splits so you can immediately separate training and evaluation data.
-
-| Split | Primary use | Typical share |
-|-------|-------------|----------------|
-| `train` | Model fitting | 70–80% |
-| `validation` | Hyperparameter tuning and early stopping | 10–15% |
-| `test` | Final unbiased evaluation | 10–15% |
-
-You can load an individual split on demand:
-
-```python
-train = load_dataset("TWI-RM/BIOMERT_Italian", split="train")
-print(len(train))
-```
-
-#### 3. Dataset Cards
-
-Each dataset has a Dataset Card that documents the source, schema, licensing, and recommended uses. Read it before integrating a dataset to confirm label definitions, preprocessing steps, and ethical considerations. The card also links to benchmarks and related work that inform how to evaluate your model.
-
-#### 4. Apache Arrow Storage
-
-Hugging Face stores tables in Apache Arrow for fast columnar access:
-
-- Arrow is a binary column store that reads efficiently on CPU and GPU.
-- It is interoperable with frameworks like Pandas, PyTorch, and TensorFlow.
-- Datasets stream from disk via memory mapping, keeping the memory footprint low.
-- Reusing the same dataset does not require a reload because Arrow caching persists between sessions.
-
-Loaders return Arrow-native blocks automatically, so you can treat each split like an in-memory dataset while benefiting from lazy loading.
-
-#### 5. Working with Partitions
-
-**What is a partition?**
-A *partition* is any subset of records that together form a complete, non-overlapping division of a dataset. The Hugging Face `DatasetDict` treats the familiar `train`, `validation`, and `test` splits as first-class partitions, but you can create as many additional groups as you need (for example, a `holdout` set for long-term regression testing or an `inference` slice for demo traffic).
-
-**Why partitions matter:**
-- They keep evaluation honest by ensuring models never see the held-out examples during training.
-- They let you tailor preprocessing: heavy augmentations might apply only to the training partition, while deterministic tokenization is shared across all partitions.
-- They support reproducibility; storing the slicing logic in code guarantees that teammates regenerate identical partitions.
-
-**Standard partitioning workflows:**
-1. **Named split selection** – Load the predefined partitions the dataset author published. This is the default when you call `load_dataset("<name>")`.
-2. **Percentage-based slicing** – Request custom ratios (e.g., 80/10/10) when the dataset ships as a single table. This is the most common option for personal or internal corpora.
-3. **Stratified sampling** – Balance the class distribution across partitions by filtering before you slice or by using `train_test_split` with the `stratify_by_column` argument.
-4. **Deterministic shards** – Fix a random seed so that partitions stay stable across runs, which is essential for comparing experiments over time.
-
-**Example: create percentage-based partitions**
-
-```python
-custom = load_dataset(
-    "mc4",
-    split={
-        "train": "train[:90%]",
-        "validation": "train[90%:95%]",
-        "test": "train[95%:]",
-    },
-)
-print({name: len(part) for name, part in custom.items()})
-```
-
-Each partition behaves like a regular `Dataset`, so you can inspect schema metadata, iterate through examples, or combine subsets. For example, you can temporarily merge the training and validation partitions for a larger fine-tuning run, then re-separate them as needed:
-
-```python
-from datasets import concatenate_datasets
-
-train = custom["train"]
-validation = custom["validation"]
-merged = concatenate_datasets([train, validation])
-print(train.column_names)
-print(merged.num_rows)
-```
-
-When you need stratified or random splits, reach for the built-in helper:
-
-```python
-balanced = train.train_test_split(
-    test_size=0.2,
-    seed=42,
-    stratify_by_column="label",
-)
-print({name: len(part) for name, part in balanced.items()})
-```
-
-This workflow keeps preprocessing centralized while letting you express advanced partitioning strategies—random shuffles, class-balanced samples, or experiment-specific holdouts—directly in code.
 
 ---
 
