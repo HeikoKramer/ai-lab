@@ -708,14 +708,14 @@ text = (
     "and presented test results that showed longer battery life than last year's design."
 )
 
-medium_summary = summarizer(text)[0]["summary_text"]
-
 shorter_summary = pipeline(
     task="summarization",
     model="sshleifer/distilbart-cnn-12-6",
     min_new_tokens=5,
     max_new_tokens=15,
 )(text)[0]["summary_text"]
+
+medium_summary = summarizer(text)[0]["summary_text"]
 
 longer_summary = pipeline(
     task="summarization",
@@ -724,17 +724,17 @@ longer_summary = pipeline(
     max_new_tokens=60,
 )(text)[0]["summary_text"]
 
+print("Short:", shorter_summary)
 print("Medium:", medium_summary)
-print("Shorter:", shorter_summary)
-print("Longer:", longer_summary)
+print("Long:", longer_summary)
 ```
 
 **Expected output:**
 
 ```
+Short: Students built a solar rover and proved it lasts longer.
 Medium: The robotics club built a solar-powered rover, trained volunteers, and reported longer battery life than last year.
-Shorter: Students built a solar rover and proved it lasts longer.
-Longer: Students in the robotics club built a solar-powered rover, documented each step, trained volunteers to drive it, and shared test data showing the new model outperforms last year's design.
+Long: Students in the robotics club built a solar-powered rover, documented each step, trained volunteers to drive it, and shared test data showing the new model outperforms last year's design.
 ```
 
 ### 8. Interpreting Token Length Effects
