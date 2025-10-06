@@ -16,6 +16,7 @@
 - Maintain a table of contents that links to the major sections.
 - Treat the "AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)" chapter as the stylistic reference for future additions; new chapters should match its concise, action-oriented tone and structure.
 - Refer to the entire "AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)" chapter when a blueprint-style summary is needed; do not maintain a standalone blueprint chapter in `ai-notes.md`.
+- Append new documentation to the end of `ai-notes.md`. Do not reorder or reposition existing chapters unless a separate request specifically asks for a restructuring.
 
 ### next-steps.md
 - Record actionable next steps for the overall repository.
