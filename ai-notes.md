@@ -62,10 +62,10 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Find Popular Models for a Task](#3-find-popular-models-for-a-task)
      - [4. Inspect Model Metadata](#4-inspect-model-metadata)
      - [5. Enumerate Available Tasks](#5-enumerate-available-tasks)
-  - [Preprocessing different modalities](#preprocessing-different-modalities)
-    - [Preprocessing text](#preprocessing-text)
-    - [Preprocessing images](#preprocessing-images)
-    - [Preprocessing audio](#preprocessing-audio)
+     - [Preprocessing different modalities](#preprocessing-different-modalities)
+       - [Preprocessing text](#preprocessing-text)
+       - [Preprocessing images](#preprocessing-images)
+       - [Preprocessing audio](#preprocessing-audio)
 
 ---
 
@@ -1171,35 +1171,32 @@ Preprocessing turns raw user input into the normalized tensors that pretrained c
 
 Text preprocessing standardizes string inputs before tokenization so every batch has a consistent representation.
 
-<table>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Raw text</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Normalize casing / remove special characters</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Pre-tokenize words or subwords</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Convert tokens to vocabulary IDs</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Apply padding to reach uniform length</td>
-  </tr>
-</table>
+```
++-----------------------------------------+
+|                 Raw text                |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|        Normalize casing / remove        |
+|            special characters           |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|      Pre-tokenize words or subwords     |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|     Convert tokens to vocabulary IDs    |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|  Apply padding to reach uniform length  |
++-----------------------------------------+
+```
 
 - **Tokenizer:** Maps text to the model input space by applying normalization rules, splitting text into tokens, and translating tokens into integer IDs.
 - **Normalization:** Handles lowercasing, punctuation stripping, whitespace cleanup, or accent folding so semantically equivalent variants collapse to the same representation.
@@ -1224,35 +1221,32 @@ This snippet reveals the normalization output and shows how padding creates a ba
 
 Moving from text to images introduces intensity normalization, consistent sizing, and processor utilities that coordinate the transformations.
 
-<table>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Raw image</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Normalize pixel intensities</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Resize to the model’s expected shape</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Apply processor-specific transforms</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Deliver tensors to the vision encoder or multimodal backbone</td>
-  </tr>
-</table>
+```
++-----------------------------------------+
+|                Raw image                |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|       Normalize pixel intensities       |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|   Resize to the model's expected shape  |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|   Apply processor-specific transforms   |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|  Deliver tensors to the vision encoder  |
+|          or multimodal backbone         |
++-----------------------------------------+
+```
 
 - **Normalization:** Scales pixel values (for example, from 0–255 to 0–1 or to mean/variance pairs) to match the distribution used during training.
 - **Resize:** Ensures that every image matches the input shape that the vision model requires, preventing convolution or attention layers from receiving unexpected dimensions.
@@ -1281,35 +1275,33 @@ The `BlipProcessor` bundles image preprocessing (resizing, normalization, pixel 
 
 Audio preprocessing converts waveforms into structured sequences that capture frequency information while respecting the model’s sample rate expectations.
 
-<table>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Raw waveform</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Resample or validate sampling rate</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Apply audio preprocessing (filtering, padding)</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Extract spectrogram or feature embeddings</td>
-  </tr>
-  <tr>
-    <td align="center">⬇️</td>
-  </tr>
-  <tr>
-    <td style="border:1px solid #6a737d; padding:8px; border-radius:6px;">Feed tensors into the acoustic model</td>
-  </tr>
-</table>
+```
++-----------------------------------------+
+|               Raw waveform              |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|    Resample or validate sampling rate   |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|  Apply audio preprocessing (filtering,  |
+|                 padding)                |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|      Extract spectrogram or feature     |
+|                embeddings               |
++-----------------------------------------+
+                     |
+                     v
++-----------------------------------------+
+|   Feed tensors into the acoustic model  |
++-----------------------------------------+
+```
 
 - **Audio feature extraction:** Transforms the waveform into log-Mel spectrograms or similar frequency-domain representations that speech models consume.
 - **Padding:** Extends shorter clips with silence so the batch forms a rectangle, mirroring the requirement described in the text workflow.
