@@ -4,6 +4,7 @@
 - **Scope:** These guidelines apply to the entire repository unless superseded by a more specific `AGENTS.md` in a subdirectory.
 - **Cheatsheet summaries:** When documenting APIs, database queries, libraries, or notable function groups, include cheat sheet-style summaries of the essential filters or functions relevant to the immediate use case whenever it adds clarity.
 - **Flowcharts:** Use flowcharts whenever they clarify multi-step processes. Arrange steps from left to right when space allows; otherwise, stack steps vertically. Always enclose each step in a bordered container so the chart reads visually as a flow diagram. Render flowcharts as ASCII art and center the text inside each node for consistent readability.
+- **`ai-projects_backlog.md`:** Keep all backlog entries in English, structuring each project with a clear vision, strategy, and prioritized tasks.
 
 ## File-Specific Expectations
 
