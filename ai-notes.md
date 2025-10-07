@@ -62,6 +62,10 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Find Popular Models for a Task](#3-find-popular-models-for-a-task)
      - [4. Inspect Model Metadata](#4-inspect-model-metadata)
      - [5. Enumerate Available Tasks](#5-enumerate-available-tasks)
+  - [Preprocessing different modalities](#preprocessing-different-modalities)
+    - [Preprocessing text](#preprocessing-text)
+    - [Preprocessing images](#preprocessing-images)
+    - [Preprocessing audio](#preprocessing-audio)
 
 ---
 
@@ -309,6 +313,8 @@ The `transformers` library centralizes state-of-the-art Transformer architecture
 - Running inference across CPUs and GPUs with device-aware optimizations.
 - Formatting and post-processing model outputs into human-readable results.
 
+More tokenizer-specific preprocessing steps are unpacked in [Preprocessing text](#preprocessing-text) so you can see the full normalization and padding workflow in action.
+
 #### 2. Install the Library
 
 Install or upgrade to the latest release of `transformers`:
@@ -353,6 +359,8 @@ When a pipeline runs, it orchestrates several steps:
 3. Tokenizes the input prompt and maps it to tensors for the target device (CPU or GPU).
 4. Streams the tensors through the model to produce logits and decoded outputs.
 5. Applies task-specific post-processing (e.g., text decoding, probability sorting, or audio chunk stitching).
+
+More details on how raw text is normalized, tokenized, and padded before modeling are provided in [Preprocessing text](#preprocessing-text).
 
 #### 6. Model Management and Caching
 
@@ -923,6 +931,8 @@ Token IDs ([993, 1256, 4820])
 Model-ready batch
 ```
 
+More details and examples on normalization, ID conversion, and padding appear in [Preprocessing text](#preprocessing-text).
+
 - **Pairing matters:** Always load the tokenizer with the exact identifier you use for the model. Checkpoints can introduce new special tokens or change normalization rules; the paired tokenizer knows about those updates.
 - **Cased vs. uncased checkpoints:**
   - *Uncased* models (e.g., `distilbert-base-uncased`) lowercase tokens, which boosts robustness on informal text and social media content.
@@ -1151,5 +1161,102 @@ When designing dataset discovery workflows, start with `get_dataset_tags()` to p
 
 ---
 
+### Preprocessing different modalities
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, and document question-answering patterns.*
+Preprocessing turns raw user input into the normalized tensors that pretrained checkpoints expect. Without these transformations, the model receives signals that differ from the data it saw during training, which leads to unstable predictions or outright failures.
+
+> **General Rule:** Mirror the preprocessing recipe that the checkpoint used during training so your runtime inputs follow the same distribution as the model’s training data.
+
+#### Preprocessing text
+
+Text preprocessing standardizes string inputs before tokenization so every batch has a consistent representation.
+
+```
+Raw text → Normalize casing / remove special characters → Pre-tokenize words or subwords → Convert tokens to vocabulary IDs → Apply padding to reach uniform length
+```
+
+- **Tokenizer:** Maps text to the model input space by applying normalization rules, splitting text into tokens, and translating tokens into integer IDs.
+- **Normalization:** Handles lowercasing, punctuation stripping, whitespace cleanup, or accent folding so semantically equivalent variants collapse to the same representation.
+- **Pre-tokenization:** Breaks text into manageable pieces (words, subwords, characters) that downstream algorithms can convert to IDs.
+- **ID conversion:** Looks up each token inside the model vocabulary to produce a tensor of token IDs.
+- **Padding:** Adds special tokens (for example, `<pad>`) so that shorter sequences match the maximum length in the batch. Padding is crucial because GPUs prefer rectangular tensors; without it, batching would require costly ragged structures and attention masks could not reliably mask irrelevant positions.
+
+```python
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+normalized = tokenizer.normalizer("Do you need more eclairs?")
+tokens = tokenizer("Do you need more eclairs?", return_tensors="pt", padding=True)
+
+print(normalized)
+print(tokens["input_ids"])
+```
+
+This snippet reveals the normalization output and shows how padding creates a batch-friendly tensor.
+
+#### Preprocessing images
+
+Moving from text to images introduces intensity normalization, consistent sizing, and processor utilities that coordinate the transformations.
+
+```
+Raw image → Normalize pixel intensities → Resize to the model’s expected shape → Apply processor-specific transforms → Deliver tensors to the vision encoder or multimodal backbone
+```
+
+- **Normalization:** Scales pixel values (for example, from 0–255 to 0–1 or to mean/variance pairs) to match the distribution used during training.
+- **Resize:** Ensures that every image matches the input shape that the vision model requires, preventing convolution or attention layers from receiving unexpected dimensions.
+- **Processor pipeline:** Applies the same augmentations or tensor formatting that the model card specifies (channel order, center cropping, text prompt pairing, etc.).
+
+```python
+from transformers import BlipForConditionalGeneration, BlipProcessor
+from PIL import Image
+
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-large")
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
+
+image = Image.open("samples/prompt.jpg")
+inputs = processor(images=image, return_tensors="pt")
+generated_ids = model.generate(**inputs)
+caption = processor.decode(generated_ids[0], skip_special_tokens=True)
+
+print(caption)
+```
+
+The `BlipProcessor` bundles image preprocessing (resizing, normalization, pixel value scaling) with optional text tokenization so the BLIP model ingests aligned vision and language signals. Without it, you would have to manually replicate every transformation that keeps the image tensor and prompt embeddings synchronized.
+
+> **General Rule:** Reuse the processor provided with a checkpoint—especially for multimodal models—so that pixel statistics, crop strategies, and text prompts stay consistent with the pretrained weights.
+
+#### Preprocessing audio
+
+Audio preprocessing converts waveforms into structured sequences that capture frequency information while respecting the model’s sample rate expectations.
+
+```
+Raw waveform → Resample or validate sampling rate → Apply audio preprocessing (filtering, padding) → Extract spectrogram or feature embeddings → Feed tensors into the acoustic model
+```
+
+- **Audio feature extraction:** Transforms the waveform into log-Mel spectrograms or similar frequency-domain representations that speech models consume.
+- **Padding:** Extends shorter clips with silence so the batch forms a rectangle, mirroring the requirement described in the text workflow.
+- **Sampling rate alignment:** Ensures that the audio tensor matches the training configuration; mismatched sampling rates cause drift in temporal resolution and degrade recognition quality.
+
+```python
+from datasets import load_dataset
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+
+dataset = load_dataset("CSTR-Edinburgh/vctk", split="train")
+processor = AutoProcessor.from_pretrained("openai/whisper-small")
+model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-small")
+
+sample = dataset[0]
+features = processor(audio=sample["audio"], sampling_rate=16000, return_tensors="pt")
+generated_ids = model.generate(**features)
+transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)
+
+print(transcription[0])
+```
+
+> **General Rule:** Keep the waveform sample rate and feature extraction parameters identical to the model card’s recommendations to avoid timing distortions and transcription errors.
+
+---
+
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, and preprocessing strategies for text, images, and audio.*
+
+
