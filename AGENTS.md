@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 - **Language:** All repository content, including documentation, code comments, commit messages, and configuration entries, must be written in English. Do not use emojis unless explicitly requested.
+- **Operational notes stay internal:** Do not copy process directions or instructions addressed to AI agents into the general documentation. Keep those details only inside `AGENTS.md` files.
 - **Scope:** These guidelines apply to the entire repository unless superseded by a more specific `AGENTS.md` in a subdirectory.
 - **Cheatsheet summaries:** When documenting APIs, database queries, libraries, or notable function groups, include cheat sheet-style summaries of the essential filters or functions relevant to the immediate use case whenever it adds clarity.
 - **Flowcharts:** Use flowcharts whenever they clarify multi-step processes. Arrange steps from left to right when space allows; otherwise, stack steps vertically. Always enclose each step in a bordered container so the chart reads visually as a flow diagram. Render flowcharts as ASCII art and center the text inside each node for consistent readability.

@@ -75,6 +75,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [2. Image classification workflow](#2-image-classification-workflow)
      - [3. Object detection pipeline](#3-object-detection-pipeline)
      - [4. Segmentation playbook](#4-segmentation-playbook)
+     - [5. Fine-tuning computer vision models](#5-fine-tuning-computer-vision-models)
 
 ---
 
@@ -1408,26 +1409,26 @@ When reading pipeline metrics:
 
 ### Computer vision
 
-This chapter translates the most image-heavy Hugging Face workflows into text-first guidance. Pair these notes with the [Preprocessing images](#preprocessing-images) chapter for input normalization details.
+Computer vision pipelines convert pixel tensors into structured predictions such as labels, bounding boxes, or pixel-level masks. Pair this chapter with [Preprocessing images](#preprocessing-images) for normalization recipes that keep inputs compatible with pretrained checkpoints.
 
 #### 1. Vision model building blocks
 
-**Purpose:** Understand how vision models convert pixels into predictions, so you can choose the right pipeline for classification, detection, or segmentation.
+**Purpose:** Understand how vision models convert pixels into predictions so you can match the right pipeline to the problem.
 
 **Key components:**
-- **Backbone:** A convolutional or transformer network (e.g., ResNet, ViT, DETR) that extracts feature maps from the image.
+- **Backbone:** A convolutional or transformer network (e.g., ResNet, ViT, ConvNeXt, DETR) that extracts feature maps from the image.
 - **Head:** A task-specific layer that maps features to labels, bounding boxes, or pixel masks.
 - **Post-processing:** Functions that translate raw outputs into human-friendly results—top-1 labels, bounding box coordinates, or color-coded masks.
 
-> **General Rule:** Keep the input resolution and channel order exactly as the model card specifies to avoid distorted activations and misaligned bounding boxes.
+> **General Rule:** Keep the input resolution, channel order, and normalization values exactly as the model card specifies. Deviating from those details distorts activations and produces off-target detections.
 
 **Cheat sheet: core computer-vision tasks**
 
-| Task | What the pipeline returns | Representative model | When to reach for it |
+| Task | What the pipeline returns | Representative model | Popular use cases |
 | --- | --- | --- | --- |
-| Image classification | Ranked labels with confidence scores | `microsoft/resnet-50` | Fast quality checks or UI label previews |
-| Object detection | Bounding boxes + labels per instance | `facebook/detr-resnet-50` | Inventory counting, safety monitoring |
-| Semantic segmentation | Per-pixel label map | `briaai/RMBG-1.4` | Background removal, scene understanding |
+| Image classification | Ranked labels with confidence scores | `microsoft/resnet-50`, `google/vit-base-patch16-224` | Quality inspection dashboards, content tagging |
+| Object detection | Bounding boxes + labels per instance | `facebook/detr-resnet-50`, `YOLOv8` (via `ultralytics/yolov8m`) | Safety monitoring, shelf analytics |
+| Semantic segmentation | Per-pixel label map | `briaai/RMBG-1.4`, `nvidia/segformer-b3-finetuned-ade-512-512` | Background removal, urban-scene planning |
 
 #### 2. Image classification workflow
 
@@ -1447,6 +1448,7 @@ print(prediction)
 
 - **Why load a dataset?** `datasets` ensures consistent Pillow image objects, making it easy to iterate through samples or compare labels.
 - **Interpreting results:** Inspect `prediction["label"]` and `prediction["score"]` to confirm the model recognizes the primary subject. High-confidence mislabels often reveal domain gaps.
+- **Typical deployment targets:** Lightweight CNNs (e.g., MobileNetV2) excel on edge devices, while larger transformers (e.g., ViT-L) power cloud classification APIs.
 
 ```text
 +----------------------------+     +--------------------------+     +------------------------------+
@@ -1479,6 +1481,8 @@ for item in predictions:
 
 - **Box format:** Each `box` dictionary exposes `xmin`, `ymin`, `xmax`, and `ymax` pixel coordinates. Convert them to integers before drawing overlays.
 - **Confidence filtering:** Adjust `threshold` to balance recall and precision. Lower values surface more boxes but risk false positives.
+- **Why detectors find people automatically:** Models such as DETR are trained on datasets like COCO that include 80+ everyday categories. Even if you only plan to keep “person” detections, the model still learns visual cues for animals, vehicles, and furniture because those labels appeared during pretraining. When an image only contains people, every high-confidence prediction falls into that category, giving the impression that the model was single-purpose.
+- **Model selection guide:** DETR offers strong accuracy for multi-object scenes, while YOLO variants prioritize real-time inference on video streams.
 
 To visualize detections, pair the pipeline with Matplotlib patches:
 
@@ -1500,9 +1504,7 @@ plt.axis("off")
 plt.show()
 ```
 
-**Interpretation tips:**
-- Focus on boxes with scores above 0.7 when validating safety-critical use cases.
-- Compare detections against ground-truth annotations or human review to catch systematic misses (e.g., occluded objects).
+> **General Rule:** Always compare detections against ground-truth annotations or a calibrated human review process. False negatives carry a higher cost in safety monitoring than low-confidence extra boxes.
 
 #### 4. Segmentation playbook
 
@@ -1526,6 +1528,7 @@ plt.show()
 
 - **Why `trust_remote_code=True`?** Some segmentation models ship custom decoding logic; this flag allows Hugging Face to execute the necessary helper functions.
 - **Output format:** Pipelines return a Pillow image or NumPy array with the background removed. Compose it with the original image to blend or replace backgrounds.
+- **Common model picks:** Use `facebook/mask2former-swin-large-ade` when you need dense scene labeling and `briaai/RMBG-1.4` for e-commerce cutouts.
 
 > **General Rule:** Validate segmentation masks against multiple lighting conditions; models trained on bright scenes often underperform on low-light or motion-blurred inputs.
 
@@ -1533,6 +1536,22 @@ plt.show()
 - Overlay masks on the original frame to assess edge quality.
 - Export masks as PNGs for downstream editing or to feed into compositing software.
 - Benchmark runtime on representative hardware; segmentation heads can be heavier than classifiers.
+
+#### 5. Fine-tuning computer vision models
+
+Fine-tuning adapts a pretrained vision model to a narrower domain, such as distinguishing between look-alike products or recognizing a new imaging modality. The typical workflow mirrors the Hugging Face end-to-end tutorials but can be summarized as follows.
+
+1. **Adjust the model head:** Swap in a new classification or detection head sized for your label set, or configure the detection head to output additional categories. Models like `google/mobilenet_v2_1.0_224` are popular starting points when you need mobile-friendly deployments.
+2. **Prepare the dataset:** Load images with `datasets`, split into train/test sets, and apply consistent transforms. Normalize pixel values using the processor tied to your checkpoint so training statistics match the pretrained backbone.
+3. **Configure training:** Define `TrainingArguments` (learning rate, batch size, epochs) and a data collator. Monitor metrics such as accuracy or mean Average Precision (mAP) to verify progress.
+4. **Train and evaluate:** Call `trainer.train()` to update weights, then `trainer.predict()` or `trainer.evaluate()` on the held-out split. Expect large jumps from baseline accuracy (e.g., 0.45 → 0.90) once the head specializes to your labels.
+
+> **General Rule:** Freeze most backbone layers for small datasets to avoid catastrophic forgetting, and only unfreeze additional blocks after the head converges.
+
+**Practical tips:**
+- **Data augmentation:** Incorporate flips, crops, and color jitter to mimic real-world variety, especially if you only have a few hundred labeled images.
+- **Label coverage:** Even when you only care about one class, include negative examples so the model learns to distinguish “not the target” cases. This is why pretrained detectors recognize people, vehicles, and props—they saw all of them during COCO training.
+- **Evaluation cadence:** Track metrics on every epoch and save the best checkpoint with `load_best_model_at_end=True` to simplify deployment.
 
 ---
 
