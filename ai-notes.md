@@ -1086,6 +1086,68 @@ The `/api/tasks` endpoint returns a JSON dictionary keyed by task identifiers. E
 
 Use the returned keys to build selection UIs or to validate that a requested task matches the Hub’s canonical taxonomy before issuing `list_models` queries.
 
+#### 6. Search and Filter Datasets Programmatically
+
+```python
+from huggingface_hub import HfApi, DatasetFilter
+
+api = HfApi()
+
+top_text_classification = api.list_datasets(
+    filter=DatasetFilter(
+        task_categories=["text-classification"],
+        languages=["en", "de"],
+        size_categories=["10K<n<100K"],
+        license="apache-2.0",
+    ),
+    sort="downloads",
+    direction=-1,
+    limit=5,
+    full=True,
+)
+
+for dataset in top_text_classification:
+    print(
+        f"{dataset.id} | downloads={dataset.downloads} | likes={dataset.likes} | "
+        f"languages={dataset.cardData.get('languages')} | configs={dataset.cardData.get('configs')}"
+    )
+
+# Inspect the richest candidate in more detail
+selected = top_text_classification[0].id
+details = api.dataset_info(selected, files_metadata=True)
+
+print("First files:", [s.rfilename for s in list(details.siblings)[:3]])
+print("Preview splits:", details.cardData.get("splits"))
+print("Preview features:", details.cardData.get("features"))
+```
+
+Key dataset filters and helpers to keep in mind:
+
+| Need | Function | Essential Arguments / Notes |
+| --- | --- | --- |
+| Enumerate public datasets with compound filters | `HfApi().list_datasets(filter=DatasetFilter(...))` | Combine `task_categories`, `languages`, `size_categories`, `license`, `tags`, `author`, `benchmark` for fine-grained slicing; `full=True` hydrates `cardData`. |
+| Quickly iterate over dataset metadata | `DatasetFilter(...)` | Accepts both scalars and lists; omit parameters to broaden the query; chaining multiple filters results in an AND logic. |
+| Pull the authoritative dataset card and file manifest | `HfApi().dataset_info(repo_id, files_metadata=True)` | Surfaces configs, splits, and schema snippets stored in the card plus every artifact under `siblings`; set `revision` to lock to a snapshot. |
+| Extract reusable taxonomy metadata | `HfApi().get_dataset_tags()` | Returns the available filter values (tasks, languages, licenses, sizes) so you can populate dropdowns without hard-coding choices. |
+
+When designing dataset discovery workflows, start with `get_dataset_tags()` to present valid options, pass the user’s selections into `DatasetFilter`, and fall back to `dataset_info()` to hydrate UI cards or validation logs before downloads begin.
+
+#### 7. CLI vs API: Verified Comparison
+
+| Task | CLI (`hf` / `huggingface-cli`) | API (`huggingface_hub`) |
+| --- | --- | --- |
+| Models & datasets search | No native search command; quickest option is still the web UI or piping API responses through `curl`/`jq` manually once you know the exact repo IDs. | `list_models()` / `list_datasets()` provide structured filtering (task, language, size, license) and ready-to-use metadata objects. |
+| Clone or download repositories | `hf download <repo-id> [files...]` fetches targeted assets without Git; pair with `--repo-type dataset` for dataset payloads. | `hf_hub_download()` mirrors the same capability but gives you Python control over caching, retries, and post-processing. |
+| Inspect metadata / configs | CLI can show environment info (`hf env`) but cannot expose dataset cards or split schemas directly. | `dataset_info()` and `model_info()` expose card data, file manifests, and download counts for automated triage. |
+| Automations & batch processing | Shell scripts can chain `hf download` or `hf upload`, yet handling pagination, retries, or conditional logic remains manual. | Python API surfaces paginated generators, structured responses, and first-class auth handling—ideal for complex filters, scoring, and orchestration. |
+| Token handling & auth | `hf auth login` stores tokens locally and is ideal for quick terminals or CI bootstrap. | Pass `token=` to API calls or set `HUGGINGFACEHUB_API_TOKEN` for headless workflows; integrate with secrets managers and retries easily. |
+
+#### 8. Summary: When to Prefer CLI vs API
+
+- **Reach for the CLI** when you already know the repository slug, need to grab or upload artifacts quickly, or want a one-off login without writing code.
+- **Reach for the API (Python)** when you must rank or filter datasets/models programmatically, enrich dashboards with metadata, or integrate Hub queries into automation pipelines.
+- Mix both when prototyping: sketch the filter logic with `list_datasets()` in a notebook, then bake the final repo IDs into shell scripts powered by `hf download` for reproducible deployments.
+
 
 ---
 
