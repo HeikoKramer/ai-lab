@@ -70,6 +70,11 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [1. Pipeline vs. model components](#1-pipeline-vs-model-components)
      - [2. Selecting pipelines for common tasks](#2-selecting-pipelines-for-common-tasks)
      - [3. Evaluating pipeline performance](#3-evaluating-pipeline-performance)
+   - [Computer vision](#computer-vision)
+     - [1. Vision model building blocks](#1-vision-model-building-blocks)
+     - [2. Image classification workflow](#2-image-classification-workflow)
+     - [3. Object detection pipeline](#3-object-detection-pipeline)
+     - [4. Segmentation playbook](#4-segmentation-playbook)
 
 ---
 
@@ -1401,8 +1406,136 @@ When reading pipeline metrics:
 
 > **General Rule:** Treat pipeline metrics as the north star for product acceptance, then use low-level model access to squeeze out the incremental gains your edge cases demand.
 
+### Computer vision
+
+This chapter translates the most image-heavy Hugging Face workflows into text-first guidance. Pair these notes with the [Preprocessing images](#preprocessing-images) chapter for input normalization details.
+
+#### 1. Vision model building blocks
+
+**Purpose:** Understand how vision models convert pixels into predictions, so you can choose the right pipeline for classification, detection, or segmentation.
+
+**Key components:**
+- **Backbone:** A convolutional or transformer network (e.g., ResNet, ViT, DETR) that extracts feature maps from the image.
+- **Head:** A task-specific layer that maps features to labels, bounding boxes, or pixel masks.
+- **Post-processing:** Functions that translate raw outputs into human-friendly results—top-1 labels, bounding box coordinates, or color-coded masks.
+
+> **General Rule:** Keep the input resolution and channel order exactly as the model card specifies to avoid distorted activations and misaligned bounding boxes.
+
+**Cheat sheet: core computer-vision tasks**
+
+| Task | What the pipeline returns | Representative model | When to reach for it |
+| --- | --- | --- | --- |
+| Image classification | Ranked labels with confidence scores | `microsoft/resnet-50` | Fast quality checks or UI label previews |
+| Object detection | Bounding boxes + labels per instance | `facebook/detr-resnet-50` | Inventory counting, safety monitoring |
+| Semantic segmentation | Per-pixel label map | `briaai/RMBG-1.4` | Background removal, scene understanding |
+
+#### 2. Image classification workflow
+
+Image classification predicts the dominant class in a picture. The pipeline handles resizing, normalization, and batching so you can focus on interpretation.
+
+```python
+from datasets import load_dataset
+from transformers import pipeline
+
+dataset = load_dataset("lambdalabs/pokemon-blip-captions", split="train")
+classifier = pipeline("image-classification", model="microsoft/resnet-50")
+
+example = dataset[0]["image"]
+prediction = classifier(example)[0]
+print(prediction)
+```
+
+- **Why load a dataset?** `datasets` ensures consistent Pillow image objects, making it easy to iterate through samples or compare labels.
+- **Interpreting results:** Inspect `prediction["label"]` and `prediction["score"]` to confirm the model recognizes the primary subject. High-confidence mislabels often reveal domain gaps.
+
+```text
++----------------------------+     +--------------------------+     +------------------------------+
+|       Select dataset       | --> |   Run classification     | --> |  Review label + confidence   |
++----------------------------+     +--------------------------+     +------------------------------+
+```
+
+Use this flow to validate each step before scaling to batch inference.
+
+#### 3. Object detection pipeline
+
+Object detection returns multiple labels, each tied to a bounding box. DETR-style models simplify the workflow by skipping anchor boxes and handling post-processing internally.
+
+```python
+from datasets import load_dataset
+from transformers import pipeline
+
+dataset = load_dataset("ashudeep/ff13k", split="test")
+detector = pipeline(
+    task="object-detection",
+    model="facebook/detr-resnet-50",
+    threshold=0.5,
+)
+
+image = dataset[42]["image"]
+predictions = detector(image)
+for item in predictions:
+    print(item["label"], item["score"], item["box"])
+```
+
+- **Box format:** Each `box` dictionary exposes `xmin`, `ymin`, `xmax`, and `ymax` pixel coordinates. Convert them to integers before drawing overlays.
+- **Confidence filtering:** Adjust `threshold` to balance recall and precision. Lower values surface more boxes but risk false positives.
+
+To visualize detections, pair the pipeline with Matplotlib patches:
+
+```python
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.imshow(image)
+for item in predictions:
+    xmin, ymin = item["box"]["xmin"], item["box"]["ymin"]
+    width = item["box"]["xmax"] - xmin
+    height = item["box"]["ymax"] - ymin
+    ax.add_patch(
+        Rectangle((xmin, ymin), width, height, fill=False, edgecolor="lime", linewidth=2)
+    )
+    ax.text(xmin, ymin - 2, f"{item['label']} ({item['score']:.2f})", color="lime")
+plt.axis("off")
+plt.show()
+```
+
+**Interpretation tips:**
+- Focus on boxes with scores above 0.7 when validating safety-critical use cases.
+- Compare detections against ground-truth annotations or human review to catch systematic misses (e.g., occluded objects).
+
+#### 4. Segmentation playbook
+
+Segmentation assigns a label to each pixel. The `image-segmentation` pipeline can remove backgrounds or highlight specific regions without manual masking.
+
+```python
+from transformers import pipeline
+import matplotlib.pyplot as plt
+
+segmenter = pipeline(
+    task="image-segmentation",
+    model="briaai/RMBG-1.4",
+    trust_remote_code=True,
+)
+
+outputs = segmenter(image)
+plt.imshow(outputs)
+plt.axis("off")
+plt.show()
+```
+
+- **Why `trust_remote_code=True`?** Some segmentation models ship custom decoding logic; this flag allows Hugging Face to execute the necessary helper functions.
+- **Output format:** Pipelines return a Pillow image or NumPy array with the background removed. Compose it with the original image to blend or replace backgrounds.
+
+> **General Rule:** Validate segmentation masks against multiple lighting conditions; models trained on bright scenes often underperform on low-light or motion-blurred inputs.
+
+**Next steps:**
+- Overlay masks on the original frame to assess edge quality.
+- Export masks as PNGs for downstream editing or to feed into compositing software.
+- Benchmark runtime on representative hardware; segmentation heads can be heavier than classifiers.
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, and audio, and pipeline task evaluation guidelines.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, and pipeline task evaluation guidelines.*
 
 
