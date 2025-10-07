@@ -18,6 +18,8 @@
 - Treat the "AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)" chapter as the stylistic reference for future additions; new chapters should match its concise, action-oriented tone and structure.
 - Refer to the entire "AI Environment Setup for PyTorch + CUDA 12.8 (RTX 5080)" chapter when a blueprint-style summary is needed; do not maintain a standalone blueprint chapter in `ai-notes.md`.
 - Append new documentation to the end of `ai-notes.md`. Do not reorder or reposition existing chapters unless a separate request specifically asks for a restructuring.
+- Before adding new content, check whether the topic already exists elsewhere in the document. If it does, add a cross-link with a one-sentence pointer (e.g., "More details and examples in this chapter") so readers can navigate between related sections.
+- Highlight general rules or best-practice guidance visually (for example, by using bold text in a dedicated sentence). Whenever a well-known general rule or best practice is relevant, incorporate it into the documentation rather than leaving it implied.
 
 ### next-steps.md
 - Record actionable next steps for the overall repository.
