@@ -2,6 +2,7 @@
 
 - **Language:** All repository content, including documentation, code comments, commit messages, and configuration entries, must be written in English. Do not use emojis unless explicitly requested.
 - **Scope:** These guidelines apply to the entire repository unless superseded by a more specific `AGENTS.md` in a subdirectory.
+- **Cheatsheet summaries:** When documenting APIs, database queries, libraries, or notable function groups, include cheat sheet-style summaries of the essential filters or functions relevant to the immediate use case whenever it adds clarity.
 
 ## File-Specific Expectations
 
