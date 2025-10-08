@@ -36,6 +36,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Question-Answering Natural Language Inference (QNLI)](#3-question-answering-natural-language-inference-qnli)
      - [4. Dynamic Category Assignment](#4-dynamic-category-assignment)
      - [5. Challenges of Text Classification](#5-challenges-of-text-classification)
+     - [Model Landscape Overview](#model-landscape-overview-text-classification)
    - [Text Summarization](#text-summarization)
      - [1. Summarization Overview](#1-summarization-overview)
      - [2. Extractive vs. Abstractive Approaches](#2-extractive-vs-abstractive-approaches)
@@ -45,11 +46,13 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [6. Abstractive Summarization in Action](#6-abstractive-summarization-in-action)
      - [7. Controlling Summary Length with Token Parameters](#7-controlling-summary-length-with-token-parameters)
      - [8. Interpreting Token Length Effects](#8-interpreting-token-length-effects)
+     - [Model Landscape Overview](#model-landscape-overview-text-summarization)
    - [Document Q&A](#document-qa)
      - [1. Concept Overview](#1-concept-overview)
      - [2. Sample Scenario](#2-sample-scenario)
      - [3. Build a Minimal Pipeline](#3-build-a-minimal-pipeline)
      - [4. Verification Checklist](#4-verification-checklist)
+     - [Model Landscape Overview](#model-landscape-overview-document-qa)
    - [Auto Models and Tokenizers](#auto-models-and-tokenizers)
      - [1. AutoModel Essentials](#1-automodel-essentials)
      - [2. AutoTokenizer Workflow](#2-autotokenizer-workflow)
@@ -76,6 +79,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Object detection pipeline](#3-object-detection-pipeline)
      - [4. Segmentation playbook](#4-segmentation-playbook)
      - [5. Fine-tuning computer vision models](#5-fine-tuning-computer-vision-models)
+     - [Model Landscape Overview](#model-landscape-overview-computer-vision)
+   - [Speech recognition and audio generation](#speech-recognition-and-audio-generation)
+     - [1. Task overview](#1-task-overview)
+     - [2. Model landscape overview](#2-model-landscape-overview)
+     - [3. End-to-end workflow example](#3-end-to-end-workflow-example)
+     - [4. Implementation checklist](#4-implementation-checklist)
 
 ---
 
@@ -1553,8 +1562,137 @@ Fine-tuning adapts a pretrained vision model to a narrower domain, such as disti
 - **Label coverage:** Even when you only care about one class, include negative examples so the model learns to distinguish “not the target” cases. This is why pretrained detectors recognize people, vehicles, and props—they saw all of them during COCO training.
 - **Evaluation cadence:** Track metrics on every epoch and save the best checkpoint with `load_best_model_at_end=True` to simplify deployment.
 
+### Model Landscape Overview (Text Classification)
+
+For workflow fundamentals, revisit [Text Classification](#text-classification). The checkpoints below are broadly adopted on the Hugging Face Hub for production-grade classification use cases.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `facebook/bart-large-mnli` | Zero-shot or label-scarce classification | Handles arbitrary label sets via natural-language prompts; strong zero-shot baseline | Slower inference than distilled models; prompt phrasing impacts accuracy |
+| `distilbert-base-uncased-finetuned-sst-2-english` | Sentiment analysis for English text | Lightweight with fast inference and solid sentiment accuracy | Limited to binary sentiment; English-only |
+| `roberta-large` fine-tuned on domain data | Domain-specific multi-class classification | High accuracy when fine-tuned; robust contextual understanding | Requires substantial compute and labeled data for fine-tuning |
+
+> **General Rule:** Benchmark a lightweight distilled model first to establish latency and accuracy baselines before scaling to larger encoders.
+
+### Model Landscape Overview (Text Summarization)
+
+See [Text Summarization](#text-summarization) for technique details. These models cover both extractive and abstractive needs across industries.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `facebook/bart-large-cnn` | Abstractive summarization of news and reports | Produces fluent, human-like summaries; strong ROUGE scores | May hallucinate facts; input length capped at 1024 tokens |
+| `google/pegasus-large` | High-quality abstractive summarization for long-form documents | Trained on diverse summarization corpora; excels at abstractive paraphrasing | Heavy GPU memory footprint; slower decoding |
+| `philschmid/bart-large-cnn-samsum` | Dialogue and meeting transcript summarization | Fine-tuned on conversational data; captures speaker turns | Less effective on formal prose or technical documents |
+
+> **General Rule:** Apply factuality checks (e.g., entailment classifiers) to abstractive outputs before publishing summaries externally.
+
+### Model Landscape Overview (Document Q&A)
+
+Operational guidance lives in [Document Q&A](#document-qa). Combine the following models to retrieve context and generate precise answers.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `deepset/roberta-base-squad2` | Extractive QA over short passages | High accuracy on span extraction; well-documented pipeline support | Requires relevant passage upfront; struggles with multi-hop reasoning |
+| `facebook/dpr-question_encoder-single-nq-base` + `facebook/dpr-ctx_encoder-single-nq-base` | Dense retrieval for large corpora | Retrieves semantically similar passages at scale; integrates with Haystack | Needs vector index infrastructure; sensitive to domain shift |
+| `google/flan-t5-large` | Generative QA with instructions | Handles abstractive answers and follow-up questions; supports few-shot prompts | May hallucinate if retrieval context is missing; larger deployment footprint |
+
+> **General Rule:** Pair generative QA models with explicit retrieval context and guardrails to minimize unsupported answers.
+
+### Model Landscape Overview (Computer Vision)
+
+The execution patterns for these checkpoints align with [Computer vision](#computer-vision). Select based on the vision task and deployment constraints.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `google/vit-base-patch16-224` | Image classification | Strong accuracy with minimal architectural tuning; benefits from fine-tuning | Requires substantial data augmentation; transformer backbone can be compute-heavy |
+| `facebook/detr-resnet-50` | Object detection | End-to-end detection without anchor tuning; solid performance out of the box | Slower inference than YOLO-family detectors; moderate memory use |
+| `briaai/RMBG-1.4` | Background removal / segmentation | Optimized for crisp cutouts; readily usable via pipelines | Narrow scope; relies on custom code (`trust_remote_code=True`) |
+
+> **General Rule:** Profile inference on target hardware early—vision transformers and detection transformers have markedly different latency profiles on CPU vs. GPU.
+
+### Speech recognition and audio generation
+
+#### 1. Task overview
+
+This chapter complements the earlier [Preprocessing audio](#preprocessing-audio) notes by focusing on end-to-end speech recognition (ASR) and speech synthesis (TTS) workflows within the Hugging Face ecosystem. The objective is to convert raw speech into text, extract voice characteristics, and regenerate speech that preserves the original speaker’s timbre.
+
+#### 2. Model landscape overview
+
+| Model | Segment | Primary Use Case | Strengths | Limitations |
+|-------|---------|------------------|-----------|-------------|
+| `openai/whisper-large-v3` | ASR | Multilingual transcription and translation | Robust to accents, noise, and code-switching; handles >50 languages | Requires GPU acceleration for real-time processing; large model footprint |
+| `facebook/wav2vec2-large-960h` | ASR | English transcription with fine-tuning flexibility | High accuracy after domain fine-tuning; efficient streaming variants available | Performs best on clean audio; needs labeled audio-text pairs for adaptation |
+| `speechbrain/spkrec-ecapa-voxceleb` | Speaker embedding | Voice print extraction for cloning or diarization | Compact embeddings with strong speaker discrimination | Additional smoothing needed for emotional prosody; sensitive to microphone mismatch |
+| `microsoft/speecht5_tts` + `microsoft/speecht5_hifigan` | TTS | Neural text-to-speech with speaker adaptation | Supports speaker embeddings for voice cloning; modular vocoder | Requires high-quality speaker embeddings; inference latency higher than lightweight vocoders |
+| `coqui/XTTS-v2` | TTS | Multilingual voice cloning with expressive prosody | Handles cross-language synthesis; community fine-tunes widely | Needs substantial VRAM; quality depends on speaker embedding quality |
+
+> **General Rule:** Always secure consent and legal rights before cloning or recreating a speaker’s voice, and retain audit logs of input samples.
+
+#### 3. End-to-end workflow example
+
+The following pipeline demonstrates how to transcribe a speaker’s audio, derive reusable voice embeddings, and regenerate speech with matching characteristics.
+
+**Step-by-step flow:**
+1. **Capture raw audio** at 16 kHz or higher and normalize levels to avoid clipping.
+2. **Transcribe speech** using Whisper (or a comparable ASR model) to obtain time-stamped text.
+3. **Extract speaker embeddings** with ECAPA-TDNN or similar models to capture timbre and prosody.
+4. **Prepare synthesis input** by pairing the transcript (or new text) with the speaker embedding vector.
+5. **Synthesize speech** through SpeechT5 (encoder-decoder) and a neural vocoder such as HiFi-GAN.
+6. **Post-process audio** for loudness normalization and export to deployment formats (e.g., WAV, MP3).
+
+```
+  +------------------------+     +----------------------+     +---------------------------+     +----------------------+     +-----------------------+
+  |    Raw Audio Input     | --> |   Whisper ASR Text    | --> |  Speaker Embedding Model  | --> |  SpeechT5 Synthesis   | --> |  HiFi-GAN Vocoder      |
+  +------------------------+     +----------------------+     +---------------------------+     +----------------------+     +-----------------------+
+```
+
+**Illustrative code snippet:**
+
+```python
+from transformers import pipeline, SpeechT5Processor, SpeechT5ForTextToSpeech
+from datasets import load_dataset
+import torch
+
+# 1. Load sample audio
+dataset = load_dataset("lj_speech", split="validation[:1]")
+audio_sample = dataset[0]["audio"]
+
+# 2. Speech recognition
+asr = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3")
+transcription = asr(audio_sample["array"], sampling_rate=audio_sample["sampling_rate"])
+
+# 3. Speaker embedding
+from speechbrain.inference.speaker import EncoderClassifier
+spk_encoder = EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")
+with torch.no_grad():
+    speaker_embedding = spk_encoder.encode_batch(torch.tensor(audio_sample["array"]).unsqueeze(0))
+
+# 4. Text-to-speech with cloned voice
+processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_tts")
+model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts")
+inputs = processor(text=transcription["text"], return_tensors="pt")
+speech = model.generate_speech(inputs["input_ids"], speaker_embeddings=speaker_embedding)
+
+# 5. Vocoder post-processing (using the paired HiFi-GAN checkpoint)
+from transformers import SpeechT5HifiGan
+vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+final_audio = vocoder(speech).cpu().numpy()
+```
+
+**Key safeguards:**
+- Validate transcription timestamps before alignment; Whisper provides segment-level timing useful for lip-sync or captioning.
+- Maintain a secure store for speaker embeddings; treat them as biometric data.
+- Apply loudness normalization (e.g., ITU-R BS.1770) before distribution to ensure consistent playback volume.
+
+#### 4. Implementation checklist
+
+- **Data governance:** Confirm consent, retention policies, and encryption for raw and processed audio.
+- **Evaluation metrics:** Track word error rate (WER) for ASR and mean opinion score (MOS) or cosine similarity for TTS output quality.
+- **Latency profiling:** Measure per-stage latency (ASR, embedding, synthesis, vocoder) to ensure the pipeline meets real-time or batch throughput targets.
+- **Fallback planning:** Keep a default synthetic voice ready in case speaker embedding extraction fails or drifts over time.
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, and pipeline task evaluation guidelines.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, pipeline task evaluation guidelines, and speech-focused generation workflows.*
 
 
