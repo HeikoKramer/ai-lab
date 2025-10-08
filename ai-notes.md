@@ -111,6 +111,13 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Document VQA specifics](#3-document-vqa-specifics)
      - [4. Multi-task reuse spotlight](#4-multi-task-reuse-spotlight)
      - [5. Model landscape playbook](#5-model-landscape-playbook)
+   - [Image editing with diffusion models](#image-editing-with-diffusion-models)
+     - [1. Concept overview](#1-concept-overview-2)
+     - [2. Diffusion pipeline walkthrough](#2-diffusion-pipeline-walkthrough)
+     - [3. Key code snippets](#3-key-code-snippets)
+     - [4. What `.to("cuda")` does](#4-what-tocuda-does)
+     - [5. Seeds and scenario control](#5-seeds-and-scenario-control)
+     - [6. Model landscape playbook](#6-model-landscape-playbook-2)
 
 ---
 
@@ -2152,6 +2159,198 @@ When evaluating multi-task candidates, align the prompt format with the pretrain
 | `google/paligemma-3b-mix-224` | Prompt-based image reasoning and lightweight grounding. | Compact multi-tasker, TPU- and GPU-friendly, supports captioning and tagging. | Lower accuracy on niche scientific imagery compared to larger instruction-tuned models. |
 
 For broader emotional reasoning that spans still images, revisit the [zero-shot image classification](#zero-shot-image-classification) and [multi-modal sentiment analysis](#multi-modal-sentiment-analysis) chapters for complementary techniques.
+
+
+### Image editing with diffusion models
+
+#### 1. Concept overview
+
+Diffusion models learn to generate or edit images by reversing a noising process. During training, a *forward* pass progressively corrupts training images with Gaussian noise until they become nearly pure noise. A learnable UNet, paired with a scheduler that tracks the variance added at each step, is then optimized to run the *reverse* denoising process: starting from random noise and iteratively predicting the signal that should remain. In latent diffusion (used by Stable Diffusion and most Hugging Face pipelines), the model works inside a compressed latent space produced by a Variational Autoencoder (VAE). Text conditioning is provided by a frozen text encoder (e.g., CLIP) whose embeddings steer the denoising trajectory toward the prompt semantics. Image editing extends this loop by injecting additional conditions—such as a mask, ControlNet features, or reference latents—to keep selected regions or structures consistent while allowing other areas to change. The pipeline keeps track of the latent noise, the conditioning embeddings, and guidance weights so that edits converge toward a photorealistic but prompt-aligned output. For a refresher on vision backbones that support these components, revisit the [Computer vision](#computer-vision) chapter.
+
+> **General rule:** Preserve a copy of the original latents, prompt, and scheduler settings whenever you iterate on edits; those three parameters are the minimum required to reproduce or fine-tune a successful edit later.
+
+#### 2. Diffusion pipeline walkthrough
+
+The high-level workflow for text-guided image editing with ControlNet support is illustrated below.
+
+```text
+     +-------------------------------+
+     |       Load base pipeline      |
+     +-------------------------------+
+                 |
+                 v
+     +-------------------------------+
+     |     Attach ControlNet (opt)   |
+     +-------------------------------+
+                 |
+                 v
+     +-------------------------------+
+     |  Prepare prompts & controls   |
+     +-------------------------------+
+                 |
+                 v
+     +-------------------------------+
+     | Encode text & guidance scales |
+     +-------------------------------+
+                 |
+                 v
+     +-------------------------------+
+     |  Denoise latents step-by-step |
+     +-------------------------------+
+                 |
+                 v
+     +-------------------------------+
+     |     Decode & post-process     |
+     +-------------------------------+
+```
+
+Each iteration inside the denoising loop combines the latent tensor, ControlNet features (e.g., Canny edges), and prompt embeddings to predict the residual noise. Guidance scaling adjusts how strongly the prompt overrides the original image content: lower scales keep more of the source image, while higher scales enforce prompt details more aggressively.
+
+#### 3. Key code snippets
+
+The snippet below mirrors the tutorial flow from the diffusers documentation while emphasizing the parameters you must control for reproducible edits.
+
+```python
+from diffusers import (
+    ControlNetModel,
+    StableDiffusionControlNetPipeline,
+    UniPCMultistepScheduler
+)
+from diffusers.utils import load_image
+import numpy as np
+import torch
+import cv2
+
+base_image = load_image("mona_lisa.png").convert("RGB")
+
+# Generate a structural hint with OpenCV's Canny edge detector
+np_image = np.array(base_image)
+edges = cv2.Canny(np_image, 100, 200)
+control_image = np.stack([edges] * 3, axis=-1)
+
+controlnet = ControlNetModel.from_pretrained(
+    "lllyasviel/sd-controlnet-canny",
+    torch_dtype=torch.float16
+)
+
+pipe = StableDiffusionControlNetPipeline.from_pretrained(
+    "runwayml/stable-diffusion-inpainting",
+    controlnet=controlnet,
+    torch_dtype=torch.float16,
+    safety_checker=None
+)
+pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+pipe.enable_xformers_memory_efficient_attention()
+pipe = pipe.to("cuda")
+
+generator = torch.Generator(device="cuda").manual_seed(31415)
+
+edited = pipe(
+    prompt=(
+        "Portrait of Albert Einstein, oil painting, expressive brush strokes,"
+        " dramatic lighting"
+    ),
+    negative_prompt="distorted anatomy, blurry details",
+    image=base_image,
+    controlnet_conditioning_image=control_image,
+    num_inference_steps=30,
+    guidance_scale=7.5,
+    generator=generator
+).images[0]
+
+edited.save("einstein_mona_lisa.png")
+```
+
+Cheat sheet: essential diffusers helpers
+
+| Helper | Purpose | Notes |
+| --- | --- | --- |
+| `StableDiffusionControlNetPipeline.from_pretrained` | Loads a Stable Diffusion pipeline with optional ControlNet weights. | Accepts `torch_dtype` for mixed precision and `safety_checker=None` when running offline demos. |
+| `pipe.enable_xformers_memory_efficient_attention()` | Activates memory-efficient attention kernels. | Requires `xformers`; dramatically lowers VRAM usage for 768px+ renders. |
+| `pipe(image=..., controlnet_conditioning_image=...)` | Sends both the base image and structural hint into the diffusion loop. | Shape of the control image must match the latent resolution; use resizing when needed. |
+| `UniPCMultistepScheduler` | High-quality scheduler optimized for editing. | Supports classifier-free guidance and fewer steps than DDIM for similar fidelity. |
+
+#### 4. What `.to("cuda")` does
+
+Calling `pipe = pipe.to("cuda")` instructs PyTorch to move every parameter tensor, buffer, and registered module inside the pipeline onto the first CUDA device. Under the hood:
+
+1. **Tensor migration:** All model weights (UNet, VAE, text encoder, ControlNet) are copied from host RAM to GPU VRAM. PyTorch updates each module’s `device` attribute so subsequent operations allocate and read tensors from GPU memory.
+2. **Kernel selection:** Future matrix multiplications, convolutions, and attention blocks dispatch to optimized CUDA kernels (cuDNN, CUTLASS, Triton) instead of CPU kernels.
+3. **Autocast alignment:** When the pipeline was initialized with `torch_dtype=torch.float16`, the `.to("cuda")` call also ensures intermediate activations are allocated in FP16 on the GPU, unlocking Tensor Core acceleration.
+4. **Generator context:** The associated `torch.Generator` must target the same device so that random numbers (noise latents) are drawn directly on the GPU without costly transfers.
+
+The result is that the denoising loop remains on the GPU end-to-end, minimizing host/device synchronization and enabling batched inference that would be impractically slow on the CPU.
+
+#### 5. Seeds and scenario control
+
+The *seed* sets the initial state of the random number generator used to sample the starting noise latents. Because diffusion editing is deterministic given the prompt, scheduler, and starting noise, fixing the seed guarantees repeatable structure and facial identity while allowing prompt changes to reshape context. Varying only the seed produces different compositions; reusing the same seed with adjusted prompts keeps the subject consistent but modifies scenery.
+
+```python
+core_prompt = "Cinematic portrait of the same woman, medium shot, 85mm lens, ultra-detailed skin"
+scenarios = {
+    "winter": "wearing a wool coat in softly falling snow, teal city lights in bokeh",
+    "summer": "standing on a sunlit beach boardwalk, golden hour rim lighting",
+    "studio": "in a professional photo studio with a charcoal backdrop, beauty dish lighting"
+}
+
+def edit_scene(tag: str, detail: str):
+    generator = torch.Generator(device=pipe.device).manual_seed(8675309)
+    result = pipe(
+        prompt=f"{core_prompt}, {detail}",
+        negative_prompt="blurry, duplicated face, distorted hands",
+        image=base_image,
+        controlnet_conditioning_image=control_image,
+        num_inference_steps=25,
+        guidance_scale=8.0,
+        generator=generator
+    ).images[0]
+    result.save(f"portrait_{tag}.png")
+
+for tag, detail in scenarios.items():
+    edit_scene(tag, detail)
+```
+
+Each call resets the generator to the identical seed (`8675309`). The ControlNet edges and initial noise latents stay aligned, so the woman’s facial features remain consistent while the environmental cues reflect the scenario-specific prompt suffix. **Always log the seed alongside prompts when sharing examples** to make collaborative reviews reproducible.
+
+#### 6. Model landscape playbook
+
+**Core production backbones**
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `runwayml/stable-diffusion-inpainting` | Masked region editing and object replacement. | Balanced quality vs. speed, strong at restoring context around the mask edges. | Requires carefully prepared masks; large masked areas may reduce fidelity. |
+| `stabilityai/stable-diffusion-xl-base-1.0` | High-resolution image generation and base edits. | SDXL backbone offers richer detail, works with many community ControlNets. | Heavier VRAM footprint; benefits from 24 GB GPUs for 1024px outputs. |
+| `stabilityai/stable-diffusion-3-medium-diffusers` | Next-gen diffusion transformer tuned for text and photorealism. | Strong prompt adherence, better typography, supports multi-prompt conditioning. | Needs 16–24 GB VRAM; slower per step than SDXL when run without Flash Attention. |
+| `black-forest-labs/FLUX.1-dev` | High-fidelity concept art and stylized renders. | Flux transformer excels at lighting, cinematic framing, and coherent stylization. | Ecosystem still maturing; ControlNet/LoRA coverage lags behind SDXL. |
+| `SG161222/RealVisXL_V4.0` | Portrait and lifestyle photography edits. | Fine-tuned SDXL with natural skin tones; strong at keeping facial structure stable. | Bias toward photorealistic lighting; stylized prompts need extra guidance scale. |
+
+**Community-favorite control add-ons**
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `diffusers/controlnet-canny` | Edge-preserving structural guidance for edits. | Excellent for architectural or portrait alignment; integrates seamlessly with SD 1.5 and SDXL. | Relies on high-quality edge maps; noisy controls can introduce artifacts. |
+| `lllyasviel/control_v11p_sd15_lineart` | Line-art guided restyling and anime workflows. | Captures clean outlines, ideal for comic-to-color conversions. | Best with SD 1.5 derivatives; SDXL support requires community ports. |
+| `InstantX/InstantID` | Face-preserving personalization. | Couples identity embeddings with diffusion editing for rapid look-alike results. | Needs face crops and produces weaker results on extreme poses. |
+| `TencentARC/IP-Adapter` | Reference-style transfer without full fine-tuning. | Lightweight adapter layers that maintain subject likeness with flexible prompts. | Extra inference latency; tuning strength parameter is critical to avoid overfitting. |
+
+**Emerging checkpoints to watch**
+
+| Model | Why it is trending | Best-fit scenarios | Caveats |
+| --- | --- | --- | --- |
+| `ByteDance/SDXL-Lightning` | Delivers 4–8 step inference suitable for live editing previews. | Product design mockups, UI ideation, quick A/B concept tests. | Needs CFG rescaling to avoid banding; final-quality renders still benefit from longer schedules. |
+| `shakker-labs/SSD-1B` | Compact distillation of SDXL with fast inference on 8–12 GB GPUs. | Teams upgrading from SD 1.5 hardware who need SDXL-like detail. | Lacks the rich LoRA ecosystem of SD 1.5; benefits from custom VAE swaps. |
+| `KBlueLeaf/kohaku-v2.1` | Anime + semi-real aesthetic tuned for inpainting. | Character-driven edits, stylized portraits with consistent line work. | Strong stylistic prior; photoreal prompts may appear painterly. |
+| `ostris/Flux-Inpaint` | Flux-based inpainting optimized for fashion and product scenes. | Maintaining fabric detail while changing colors/patterns. | Community tooling still catching up—requires manual scheduler configuration. |
+
+**Community trend briefing**
+
+- *Diffusion transformers (DiTs)* such as Stable Diffusion 3 and Flux are gaining traction because they scale better with dataset size and offer sharper text rendering than UNet-only systems.
+- *Fast inference distillations* (Turbo, Lightning, Hyper-SD) remain popular for interactive UX, with many teams chaining a rapid preview model followed by a high-quality rerender.
+- *Identity and style adapters* (IP-Adapter, InstantID, PhotoMaker) dominate personalization discussions, especially when combined with ControlNet for consistent body pose.
+- *Video and motion diffusion* (AnimateDiff, Stable Video Diffusion) are spilling into image-editing threads as creators repurpose keyframe edits to seed short loops—plan for temporal consistency if you need frame-to-frame coherence.
+- *LoRA marketplaces* continue to trend; best practice is to track license terms and bake attribution into project docs when you combine third-party LoRAs with base checkpoints.
+
+For domain-specific diffusion checkpoints (e.g., product mockups or anime styles), search the Hugging Face Hub by combining the *Diffusion* library filter with your target genre. Document shortlisted models using the same task/strength/limitation format to keep evaluations consistent with the rest of this chapter.
 
 
 ---
