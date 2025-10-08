@@ -105,6 +105,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [4. MoviePy cheat sheet](#4-moviepy-cheat-sheet)
      - [5. Frame-by-frame prediction walkthrough](#5-frame-by-frame-prediction-walkthrough)
      - [6. Model landscape playbook](#6-model-landscape-playbook-1)
+   - [Visual question-answering (VQA)](#visual-question-answering-vqa)
+     - [1. Task overview](#1-task-overview)
+     - [2. Minimal pipeline walkthrough](#2-minimal-pipeline-walkthrough)
+     - [3. Document VQA specifics](#3-document-vqa-specifics)
+     - [4. Multi-task reuse spotlight](#4-multi-task-reuse-spotlight)
+     - [5. Model landscape playbook](#5-model-landscape-playbook)
 
 ---
 
@@ -2025,8 +2031,131 @@ Each row aggregates the averaged visual and audio probabilities. Practitioners o
 For broader emotional reasoning that spans still images, revisit the [zero-shot image classification](#zero-shot-image-classification) and [multi-modal sentiment analysis](#multi-modal-sentiment-analysis) chapters for complementary techniques.
 
 
+### Visual question-answering (VQA)
+
+#### 1. Task overview
+
+Visual question-answering (VQA) couples natural-language questions with images (or video frames) to predict concise answers from the joint context. Hugging Face VQA pipelines wrap multimodal encoder-decoder stacks so you can load a pre-trained checkpoint and immediately query image regions. More document-centric techniques live in the [Document Q&A](#document-qa) chapter—refer there for extended extraction tips.
+
+- **Core objective:** Encode text and visual tokens, fuse them, and generate an answer token sequence.
+- Inputs arrive as `(question, image)` pairs; the image can be a local file, URL, or PIL object.
+- Outputs are typically short strings (single words or phrases) accompanied by confidence scores.
+
+#### 2. Minimal pipeline walkthrough
+
+The `transformers` library exposes VQA-friendly checkpoints via `ViltForQuestionAnswering`, `BlipForQuestionAnswering`, and ready-to-run `pipeline` wrappers. The snippet below mirrors the tutorial flow while emphasizing reproducibility on CPU or GPU:
+
+```python
+from transformers import pipeline
+
+qa = pipeline(
+    task="visual-question-answering",
+    model="dandelin/vilt-b32-finetuned-vqa",
+    device_map="auto"
+)
+
+result = qa(
+    image="https://images.unsplash.com/photo-1582314203383-78869e7ba439",
+    question="What animal is looking at the camera?"
+)
+
+print(result)
+```
+
+Expect a list with `{'score': float, 'answer': str}`. Use `device_map="auto"` to target available GPUs; omit it for CPU-only environments. **Always verify image licensing before downloading examples into production datasets.**
+
+Execution order for the pipeline stages is captured in the ASCII flowchart below:
+
+```
++------------------------+
+|      Load inputs       |
++------------------------+
+            |
+            v
++------------------------+
+|    Encode question     |
++------------------------+
+            |
+            v
++------------------------+
+|      Encode image      |
++------------------------+
+            |
+            v
++------------------------+
+|  Fuse multimodal cues  |
++------------------------+
+            |
+            v
++------------------------+
+|   Decode answer text   |
++------------------------+
+```
+
+Cheatsheet: high-leverage pipeline arguments
+
+- `top_k`: Return multiple candidate answers for manual adjudication.
+- `padding` / `truncation`: Align batch shapes when sending multiple questions in one call.
+- `framework`: Force PyTorch (`pt`) or TensorFlow (`tf`) backends if both are installed.
+
+#### 3. Document VQA specifics
+
+Document VQA extends the core task to PDFs, scans, or receipts where text layout matters. Because text needs to be decoded before multimodal fusion, OCR is an essential preprocessing step.
+
+- The open-source **Tesseract** project (originally from HP, now maintained by Google) provides battle-tested OCR capabilities in 100+ languages. Hugging Face pipelines rely on it to transform pixel regions into textual tokens when native text layers are absent.
+- On Windows Subsystem for Linux (WSL), install and verify Tesseract with:
+  1. `sudo apt update && sudo apt install -y tesseract-ocr libtesseract-dev`
+  2. Optional language packs, e.g., `sudo apt install tesseract-ocr-deu`
+  3. `tesseract --version` to confirm bindings before running LayoutLM-based notebooks.
+- Pair Tesseract with `pytesseract` or `ocrmypdf` when you need Python bindings or PDF reconstruction.
+
+Once OCR is available, a document-aware pipeline can be assembled as follows:
+
+```python
+from datasets import load_dataset
+from transformers import pipeline
+
+doc_vqa = pipeline(
+    task="document-question-answering",
+    model="impira/layoutlm-document-qa"
+)
+
+sample = load_dataset("lams-lab/DocVQA", split="test[0]")
+print(doc_vqa(question="What is the gross income in 2011-2012?", image=sample["image"]))
+```
+
+Remember that LayoutLM variants expect tuples of `(question, image)` and will invoke OCR automatically if raw pixels are provided. **Always spot-check OCR output before downstream reasoning to avoid cascading answer errors.**
+
+#### 4. Multi-task reuse spotlight
+
+> “This means that models can be reused for multiple purposes, often without needing to be retrained or fine-tuned.”
+
+VQA models inherit multimodal encoders that generalize beyond a single downstream task. Popular reuse patterns include few-shot captioning, referring expression grounding, and zero-shot classification over text prompts.
+
+- **Large, instruction-tuned stacks:** `Salesforce/instructblip-flan-t5-xl` and `IDEA-Research/grounding-dino-base` support conversational VQA, dense captioning, and detection without fresh gradients; they trade versatility for higher VRAM requirements.
+- **Mid-sized generalists:** `dandelin/vilt-b32-finetuned-vqa` (~87M parameters) excels at everyday VQA and adapts to retrieval-style prompts when paired with sentence similarity heads.
+- **Compact specialists:** `google/paligemma-3b-mix-224` compresses language conditioning into a 3B parameter vision-language model, while `naver-clova-ix/donut-base` handles document QA, form parsing, and receipt understanding in a single encoder-decoder stack.
+- **Targeted multi-task helpers:** `Salesforce/blip-vqa-base` can answer questions, generate captions, and kickstart visual dialog, making it a strong off-the-shelf option for product catalog bots.
+
+Are multi-task models always huge? No—while instruction-following giants dominate headlines, ViLT and Donut checkpoints stay relatively lightweight and run on consumer GPUs (12–16 GB). These smaller models shine when the domain is well-defined (e.g., invoices, e-commerce imagery) and latency matters more than open-ended reasoning.
+
+When evaluating multi-task candidates, align the prompt format with the pretraining corpus and monitor answer calibration across tasks. **Always rehearse with validation prompts spanning every intended use case before rollout.**
+
+#### 5. Model landscape playbook
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `dandelin/vilt-b32-finetuned-vqa` | General-purpose VQA on everyday imagery. | Lightweight vision-language transformer, fast to deploy, supports batch inference. | Struggles with dense text regions; relies on OCR add-ons for documents. |
+| `Salesforce/blip-vqa-base` | Open-ended VQA and captioning. | Vision-language pretraining on large corpora, good zero-shot caption quality. | Requires mixed-precision tuning on smaller GPUs to hit peak speed. |
+| `Salesforce/instructblip-flan-t5-xl` | Instructional VQA and multimodal chat. | Handles multi-turn dialog, follows natural language instructions. | 3D VRAM footprint; inference benefits from GPU offloading or quantization. |
+| `naver-clova-ix/donut-base` | Document VQA, form parsing, receipt summarization. | OCR-free encoder-decoder, strong on structured documents. | Needs higher-resolution inputs; sensitive to noisy scans. |
+| `google/paligemma-3b-mix-224` | Prompt-based image reasoning and lightweight grounding. | Compact multi-tasker, TPU- and GPU-friendly, supports captioning and tagging. | Lower accuracy on niche scientific imagery compared to larger instruction-tuned models. |
+
+For broader emotional reasoning that spans still images, revisit the [zero-shot image classification](#zero-shot-image-classification) and [multi-modal sentiment analysis](#multi-modal-sentiment-analysis) chapters for complementary techniques.
+
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, and zero-shot video classification playbooks.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, zero-shot video classification playbooks, and visual question-answering strategies.*
 
 
