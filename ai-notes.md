@@ -93,6 +93,11 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Interpreting similarity scores](#3-interpreting-similarity-scores)
      - [4. Cheat sheet: essential functions](#4-cheat-sheet-essential-functions)
      - [5. Model landscape playbook for zero-shot](#5-model-landscape-playbook-for-zero-shot)
+   - [Multi-modal sentiment analysis](#multi-modal-sentiment-analysis)
+     - [1. Concept overview](#1-concept-overview-1)
+     - [2. Qwen2 VLM share price walkthrough](#2-qwen2-vlm-share-price-walkthrough)
+     - [3. Model landscape quick reference](#3-model-landscape-quick-reference)
+     - [4. Cheat sheet: essential functions](#4-cheat-sheet-essential-functions-1)
 
 ---
 
@@ -1885,8 +1890,58 @@ This mirrors the screenshots: the image of the airplane is associated with promp
 | `Salesforce/blip-itm-large-coco` | Product discovery with caption grounding and retrieval. | Integrates captioning and matching for richer annotations. | Heavier model; requires paired image-text data for best results. |
 | `microsoft/beit-base-patch16-224-pt22k-ft22k` + prompt tuning | Domain adaptation when CLIP underperforms on specialized catalogs. | Strong visual backbone adaptable via adapters or LoRA. | Needs light fine-tuning; not zero-shot out of the box. |
 
+### Multi-modal sentiment analysis
+
+Multi-modal sentiment analysis fuses textual and visual cues so that a single model can interpret how imagery reinforces or contradicts written narratives. By pairing article excerpts with accompanying photos or charts, practitioners can flag emotionally charged messaging faster than siloed NLP or CV systems.
+
+> **General rule:** Always align the textual narrative and visual evidence when labeling sentiment; conflicting modalities require human review before acting on model outputs.
+
+#### 1. Concept overview
+
+- **Objective:** Determine whether the combined article copy and image context express positive, neutral, or negative sentiment about a subject (e.g., a company’s share price).
+- **How it works:** Vision-language models (VLMs) embed text and images into a shared latent space, enabling the decoder to reason over cross-modal relationships before generating a response.
+- **Preprocessing reminder:** Reuse the normalization checklists in [Preprocessing text](#preprocessing-text) and [Preprocessing images](#preprocessing-images) so that tokenized narratives and resized images stay synchronized during inference.
+
+#### 2. Qwen2 VLM share price walkthrough
+
+The "share price impact" tutorial illustrates how Qwen2-VL classifies Ford’s stock outlook using a BBC article and a header image. The following steps recreate the workflow and explain each component.
+
+```
+    +-----------------------+     +-------------------------------+     +-----------------------------+
+    |  Load BBC article row  | --> | Prepare chat-style prompt and  | --> |  Generate sentiment report  |
+    |  (text + image fields) |     |    multi-modal tensors         |     |        with Qwen2-VL        |
+    +-----------------------+     +-------------------------------+     +-----------------------------+
+```
+
+1. **Ingest the dataset:** `load_dataset("RealtimeData/news_articles", split="train", streaming=True)` streams rows that bundle article text, metadata, and an `image` column. Selecting Ford-related headlines yields the sample about investments in Mexico.
+2. **Instantiate the VLM:** `Qwen2VLForConditionalGeneration.from_pretrained("Qwen/Qwen2-VL-7B-Instruct")` loads the transformer checkpoint, while `Qwen2VLProcessor.from_pretrained(...)` brings in matching tokenizers and image feature extractors. Keeping processor and model paired avoids shape mismatches during encoding.
+3. **Assemble the preprocessor:** Pass parameters such as `max_pixels` and `image_seq_length` to `Qwen2VLProcessor.from_pretrained(..., padding_side="right")` so that image tensors stay within GPU limits and chat turns remain aligned during batching.
+4. **Draft the multi-modal prompt:** A chat template declares the system instruction and user request. The user turn contains both the article excerpt and the embedded image placeholder (`{"type": "image"}` entries). Applying `processor.apply_chat_template(chat_template, tokenize=False)` converts this structure into serialized text with special tokens separating modalities.
+5. **Tokenize text and encode images:** `processor(images=article_row["image"], text=text_query, return_tensors="pt")` yields `input_ids`, `attention_mask`, and pixel values sized for the VLM’s vision encoder. This is where the article body and photo become aligned tensors.
+6. **Generate the sentiment narrative:** `vl_model.generate(**tokenized_inputs, max_new_tokens=500)` performs conditional generation. The decoder attends to both the textual narrative and visual embeddings, weighing how the image of Ford’s factory complements the article’s cautionary tone.
+7. **Decode the answer:** `processor.batch_decode(generated_ids, skip_special_tokens=True)` translates token IDs into human-readable text. The final message, "The sentiment of the provided text is negative...", ties the stock’s expected downturn to the concerns raised in the article.
+
+> **Implementation tip:** Monitor GPU memory during step 6; VLMs can exceed allocations when prompts include multiple high-resolution images.
+
+#### 3. Model landscape quick reference
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `Qwen/Qwen2-VL-7B-Instruct` | Multi-modal reasoning over financial news, e-commerce, and documents. | Strong instruction tuning, multilingual coverage, competitive latency for 7B scale. | Requires careful prompt formatting; sensitive to very long documents. |
+| `llava-hf/llava-1.5-13b-hf` | General-purpose image-question answering and sentiment grounding. | Extensive community tooling, robust at aligning product photos with text. | Larger VRAM footprint; responses can be verbose without additional constraints. |
+| `Salesforce/blip2-opt-2.7b` | Captioning and visual question answering with lightweight compute. | Efficient vision-language encoder, good base for fine-tuning domain sentiment. | Out-of-the-box sentiment reasoning is limited; benefits from task-specific adapters. |
+
+#### 4. Cheat sheet: essential functions
+
+- `datasets.load_dataset`: Streams news articles with paired media assets for multi-modal labeling.
+- `Qwen2VLProcessor.apply_chat_template`: Formats system/user turns into the structured prompt Qwen2-VL expects.
+- `Qwen2VLProcessor.__call__`: Tokenizes text and prepares pixel values so the model can consume both modalities in one batch.
+- `Qwen2VLForConditionalGeneration.generate`: Produces the sentiment-labeled explanation conditioned on the encoded article and image.
+- `Qwen2VLProcessor.batch_decode`: Converts generated token IDs back into explanatory sentences for analyst review.
+
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, and speech-focused generation workflows.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, and multi-modal sentiment analysis.*
 
 
