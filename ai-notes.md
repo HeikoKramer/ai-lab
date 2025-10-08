@@ -98,6 +98,13 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [2. Qwen2 VLM share price walkthrough](#2-qwen2-vlm-share-price-walkthrough)
      - [3. Model landscape quick reference](#3-model-landscape-quick-reference)
      - [4. Cheat sheet: essential functions](#4-cheat-sheet-essential-functions-1)
+   - [Zero-shot video classification](#zero-shot-video-classification)
+     - [1. Scenario and pipeline overview](#1-scenario-and-pipeline-overview)
+     - [2. CLAP model purpose and concept](#2-clap-model-purpose-and-concept)
+     - [3. Tutorial: preparing audio and video](#3-tutorial-preparing-audio-and-video)
+     - [4. MoviePy cheat sheet](#4-moviepy-cheat-sheet)
+     - [5. Frame-by-frame prediction walkthrough](#5-frame-by-frame-prediction-walkthrough)
+     - [6. Model landscape playbook](#6-model-landscape-playbook-1)
 
 ---
 
@@ -1939,9 +1946,87 @@ The "share price impact" tutorial illustrates how Qwen2-VL classifies Ford’s s
 - `Qwen2VLForConditionalGeneration.generate`: Produces the sentiment-labeled explanation conditioned on the encoded article and image.
 - `Qwen2VLProcessor.batch_decode`: Converts generated token IDs back into explanatory sentences for analyst review.
 
+### Zero-shot video classification
+
+#### 1. Scenario and pipeline overview
+
+Zero-shot video classification extends the CLIP-style similarity approach from the [zero-shot image classification](#zero-shot-image-classification) chapter to moving pictures. A typical business question is whether a company’s product demo elicits the intended emotion in viewers without manually labeling each frame. We can align candidate labels such as `"joy"`, `"fear"`, and `"surprise"` with both the visual frames and the soundtrack to infer sentiment shifts.
+
+```
+    +---------------------------+     +---------------------------+     +---------------------------+
+    |        Pick MP4          | --> |    Sample key frames       | --> | Encode frames with X-CLIP |
+    |   (video + audio track)  |     |  (e.g., every 0.5 seconds) |     |  to get vision embeddings |
+    +---------------------------+     +---------------------------+     +---------------------------+
+                                        |
+                                        v
+    +---------------------------+     +---------------------------+     +---------------------------+
+    |  Extract audio waveform   | --> | Encode audio with CLAP    | --> | Fuse scores & rank labels |
+    |   via MoviePy separation  |     |    (emotion candidates)   |     |   per frame or segment    |
+    +---------------------------+     +---------------------------+     +---------------------------+
+```
+
+> **Best practice:** Always sample frames and audio segments on synchronized timestamps so the combined prediction reflects the same moment in the clip.
+
+#### 2. CLAP model purpose and concept
+
+The Contrastive Language-Audio Pretraining (CLAP) model pairs audio events with textual descriptions through contrastive learning, mirroring how CLIP learns image-text alignment. During pretraining, CLAP ingests millions of audio clips alongside captions; the model learns to embed audio and text into a shared latent space. At inference, we compute cosine similarity between an audio embedding and candidate label prompts (e.g., `"the sound of joyful cheering"`). This allows **zero-shot** labeling of new clips without fine-tuning. CLAP shines when emotional tone or acoustic events strongly influence classification, making it a natural companion to video encoders for multi-modal sentiment.
+
+#### 3. Tutorial: preparing audio and video
+
+The workflow below mirrors the zero-shot tutorial structure used earlier, but adds synchronized audio analysis.
+
+1. **Load the assets.** `clip = VideoFileClip("surprise_party.mp4")` creates an object representing both video frames and the embedded audio track. Keep a copy of the clip length for evenly spaced sampling.
+2. **Separate media streams.** MoviePy exposes `clip.audio` for the soundtrack and allows `clip.iter_frames(fps=2, dtype="uint8")` to iterate over frames. We will detail the separation mechanics in the next section.
+3. **Generate textual hypotheses.** Craft prompts such as `"a joyful celebration"`, `"a startled scream"`, and `"a nervous pause"`. Reuse the same label vocabulary for both video and audio encoders to keep scores comparable.
+4. **Encode visuals.** Use the Hugging Face pipeline `vision_pipe = pipeline("zero-shot-image-classification", model="microsoft/xclip-base-patch16")` and feed batches of frames. This model applies a ViT backbone with temporal attention to score each frame against the label prompts.
+5. **Encode audio.** Instantiate `audio_pipe = pipeline("audio-classification", model="laion/clap-htsat-unfused")`. Pass the synchronized audio snippets (e.g., 0.5-second windows) with the label list.
+6. **Combine decisions.** For each timestamp, average the normalized probabilities from both modalities or weigh them according to business priorities. **When in doubt, favor the modality that carries the strongest evidence for the label in your domain.**
+7. **Report findings.** Log the time series of emotions and mark the inflection point when fear fades and joy stabilizes. Provide stakeholders with the supporting frame thumbnails and waveform slices.
+
+#### 4. MoviePy cheat sheet
+
+MoviePy provides concise helpers for slicing and exporting MP4 assets. Understanding how it separates video and audio ensures the zero-shot pipeline receives clean inputs.
+
+- `VideoFileClip(path)`: Reads the MP4 container, exposes metadata like `duration`, and loads both video frames and the audio stream via `FFMPEG_VideoReader` and `FFMPEG_AudioReader` under the hood.
+- `clip.subclip(t_start, t_end)`: Returns a new clip with synchronized video and audio segments. MoviePy seeks the requested timestamps and issues ffmpeg commands to decode only the required range.
+- `clip.audio`: Provides a `AudioFileClip` proxy backed by ffmpeg pipes. Use `clip.audio.write_audiofile("audio.wav", fps=16000)` to extract high-quality WAV tracks.
+- `clip.without_audio()`: Produces a video-only clip, which is useful when batching frames for GPU inference without audio overhead.
+- `clip.iter_frames(fps, dtype)`: Streams frames as NumPy arrays. Under the hood, MoviePy relies on ffmpeg to decode frames to memory and yields them one by one, respecting the requested FPS.
+- `concatenate_videoclips([...], method="compose")`: Aligns clips with mismatched sizes by padding borders; handy when building annotated reels.
+- **Trick:** Call `clip.set_audio(AudioFileClip("denoised.wav"))` after cleaning the soundtrack to keep visuals aligned while swapping in a denoised audio stream for CLAP.
+
+Separating MP4 content works by delegating to ffmpeg subprocesses. MoviePy spawns `ffmpeg_extract_subclip` or direct ffmpeg commands that copy (`-c copy`) or re-encode (`-acodec pcm_s16le`, `-vcodec libx264`) streams depending on your arguments. The library reads decoded frames through a pipe, while audio samples are buffered and exposed as an iterable of NumPy arrays. Because both readers share the same `t_start` and `t_end`, the resulting frame indices and audio chunks stay perfectly aligned for multimodal analysis.
+
+#### 5. Frame-by-frame prediction walkthrough
+
+Using the tutorial pipeline, we can illustrate the expected output for a surprise party prank. The subject is startled across the first few frames, then realizes the celebration is positive.
+
+| Timestamp (s) | Joy score | Fear score | Top label | Narrative |
+| --- | --- | --- | --- | --- |
+| 0.0 | 0.32 | 0.18 | joy | Candlelight and soft chatter hint at a warm scene. |
+| 0.5 | 0.28 | 0.41 | fear | Friends jump out; the frame captures widened eyes and a gasp. |
+| 1.0 | 0.22 | 0.63 | fear | CLAP detects a sharp yelp, X-CLIP notes recoiling posture. |
+| 1.5 | 0.35 | 0.37 | joy | Audio settles into laughter, facial muscles relax. |
+| 2.0 | 0.58 | 0.21 | joy | The subject sees the gift table and begins smiling. |
+| 2.5 | 0.76 | 0.11 | joy | Sustained cheering and beaming expression dominate. |
+| 3.0 | 0.81 | 0.08 | joy | Joy stabilizes as the group sings; fear nearly vanishes. |
+
+Each row aggregates the averaged visual and audio probabilities. Practitioners often smooth this curve with a rolling mean to avoid jitter in downstream analytics.
+
+#### 6. Model landscape playbook
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `microsoft/xclip-base-patch16` | Zero-shot video classification via CLIP-style temporal attention. | Strong cross-modal alignment, supports prompt-style labels, integrates with `transformers` pipelines. | Requires frame sampling; inference is heavier than static CLIP. |
+| `MCG-NJU/videomae-base` | Video understanding with masked auto-encoding pretraining. | Excellent motion sensitivity, competitive accuracy on Kinetics datasets. | Needs task-specific heads for classification; zero-shot support relies on adapter prompts. |
+| `facebook/timesformer-base-finetuned-k400` | Transformer-based action recognition. | Global temporal modeling, works well for action labels like "hug" or "surprise". | Primarily finetuned; zero-shot performance depends on label similarity to training set. |
+| `laion/clap-htsat-unfused` | Audio-text zero-shot classification for environmental and emotional sounds. | Learned on 633k audio-text pairs, robust to varied acoustic events, seamless label prompting. | Audio-only; must be fused with video encoders for full scene understanding. |
+
+For broader emotional reasoning that spans still images, revisit the [zero-shot image classification](#zero-shot-image-classification) and [multi-modal sentiment analysis](#multi-modal-sentiment-analysis) chapters for complementary techniques.
+
 
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, and multi-modal sentiment analysis.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, and zero-shot video classification playbooks.*
 
 
