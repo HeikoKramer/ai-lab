@@ -86,6 +86,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [2. Model landscape overview](#2-model-landscape-overview)
      - [3. End-to-end workflow example](#3-end-to-end-workflow-example)
      - [4. Implementation checklist](#4-implementation-checklist)
+     - [5. Fine-tuning text-to-speech models](#5-fine-tuning-text-to-speech-models)
 
 ---
 
@@ -1743,6 +1744,66 @@ final_audio = vocoder(speech).cpu().numpy()
 - **Evaluation metrics:** Track word error rate (WER) for ASR and mean opinion score (MOS) or cosine similarity for TTS output quality.
 - **Latency profiling:** Measure per-stage latency (ASR, embedding, synthesis, vocoder) to ensure the pipeline meets real-time or batch throughput targets.
 - **Fallback planning:** Keep a default synthetic voice ready in case speaker embedding extraction fails or drifts over time.
+
+#### 5. Fine-tuning text-to-speech models
+
+This scenario documents the Hugging Face tutorial that fine-tunes `microsoft/speecht5_tts` and its HiFi-GAN vocoder on the multilingual VoxPopuli dataset so that the model reproduces European Parliament speakers with realistic accents. The procedure augments the earlier [Preprocessing audio](#preprocessing-audio) guidance with a complete training recipe tailored to cross-lingual voice cloning.
+
+> **General Rule:** Audit dataset licensing and speaker consent before training; voice clones qualify as biometric data and must follow your organization’s privacy policies.
+
+**Fine-tuning-ready model picks:**
+
+| Model | Role | Strengths | Limitations |
+|-------|------|-----------|-------------|
+| `microsoft/speecht5_tts` | Core text-to-speech model | Supports speaker embeddings and multilingual inputs; integrates with Hugging Face Trainer | Requires careful normalization to prevent prosody drift |
+| `microsoft/speecht5_hifigan` | Vocoder | Produces high-fidelity waveforms matched to SpeechT5 latent space | Higher inference latency than lightweight GAN vocoders |
+| `speechbrain/spkrec-ecapa-voxceleb` | Speaker encoder | Delivers compact embeddings with strong speaker discrimination | Sensitive to recording equipment mismatches |
+
+**Process overview flowchart:**
+
+```
+        +---------------------------+     +----------------------------+     +----------------------------+     +-------------------------+
+        |   Curate VoxPopuli data   | --> |  Normalize & tokenize audio | --> |  Configure SpeechT5 trainer | --> |  Run fine-tuning & eval |
+        +---------------------------+     +----------------------------+     +----------------------------+     +-------------------------+
+```
+
+**Step 1 – Preparing an audio dataset**
+- **Target:** Assemble a balanced multilingual training corpus with aligned transcripts and speaker metadata.
+- **Procedure:** Use `datasets.load_dataset("facebook/voxpopuli", "en", split="train")` to stream audio, transcripts, and speaker IDs. Select languages via the configuration key (e.g., `"it"`, `"fr"`) to match your deployment and retain the `speaker_id` for cloning experiments.
+- **Result:** A Hugging Face dataset where each row provides the waveform (`audio`), normalized transcript (`normalized_text`), language tag, and speaker identifier, ready for preprocessing.
+
+**Step 2 – Attaching speaker embeddings**
+- **Target:** Enrich each dataset entry with a reusable voice descriptor compatible with SpeechT5.
+- **Procedure:** Load `speechbrain/spkrec-ecapa-voxceleb` via `EncoderClassifier.from_hparams(...)`, then map over the dataset to encode each waveform. Persist embeddings with `dataset = dataset.map(encode_batch, batched=True)` so downstream dataloaders can access them without recomputation.
+- **Result:** Each audio sample includes a `speaker_embeddings` column whose tensor captures the speaker’s timbre, enabling rapid experimentation across languages.
+
+**Step 3 – Audio preprocessing**
+- **Target:** Standardize sampling rates, ensure transcripts are tokenized, and align features with SpeechT5 expectations.
+- **Procedure:** Apply `SpeechT5Processor` in a dataset map call to resample audio, strip leading silence, and tokenize text into `input_ids`. Follow the tutorial’s normalization pipeline to pass speaker embeddings into the processor, and cache the results to disk to speed up repeated epochs.
+- **Result:** Cleaned batches containing token IDs, attention masks, and speaker embeddings that match the model’s training distribution, preventing instability during fine-tuning. (More preprocessing strategies in [Preprocessing audio](#preprocessing-audio).)
+
+**Step 4 – Configuring training arguments**
+- **Target:** Define resource-aware hyperparameters for mixed-language fine-tuning.
+- **Procedure:** Instantiate `Seq2SeqTrainingArguments` with settings such as `per_device_train_batch_size=4`, `learning_rate=5e-5`, `warmup_steps=1_000`, and `generation_max_length=200`. Pair these arguments with `data_collator=data_collator` to pad sequences and ensure the trainer logs metrics to `tensorboard` or `wandb` for monitoring.
+- **Result:** A reproducible training configuration tuned for GPU memory constraints, enabling stable gradient updates without overfitting shorter utterances.
+
+**Step 5 – Launching the Trainer**
+- **Target:** Update SpeechT5 weights while reusing the pretrained vocabulary and speaker encoder.
+- **Procedure:** Load `SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts")`, attach the HiFi-GAN vocoder, and create a `Seq2SeqTrainer` with the processed dataset, model, processor, and embeddings-aware data collator. Call `trainer.train()` to execute fine-tuning, then `trainer.evaluate()` to measure validation loss.
+- **Result:** A fine-tuned checkpoint whose spectrograms align with the target speaker style, ready for deployment alongside the matching vocoder.
+
+**Step 6 – Using the adapted model**
+- **Target:** Validate inference quality on held-out transcripts and new prompts.
+- **Procedure:** During inference, fetch a stored `speaker_embedding`, tokenize the target text through the processor, and run `model.generate_speech(...)` before passing the output to `SpeechT5HifiGan`. Compare generated speech against references using cosine similarity and listening tests.
+- **Result:** Natural-sounding speech that preserves speaker identity across languages, with metrics confirming that fine-tuning improved clarity over the base checkpoint.
+
+**Cheat sheet – Key Hugging Face components:**
+- `datasets.load_dataset`: Streams VoxPopuli splits with audio and metadata.
+- `EncoderClassifier.encode_batch`: Produces speaker embeddings for cloning workflows.
+- `SpeechT5Processor`: Normalizes audio features and tokenizes transcripts for SpeechT5.
+- `Seq2SeqTrainer`: Handles training loops, gradient accumulation, and evaluation callbacks.
+
+**Validation tip:** Visualize mel-spectrograms before and after training; aligned harmonic patterns confirm that prosody and pronunciation match the target speaker.
 
 ---
 
