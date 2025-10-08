@@ -87,6 +87,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. End-to-end workflow example](#3-end-to-end-workflow-example)
      - [4. Implementation checklist](#4-implementation-checklist)
      - [5. Fine-tuning text-to-speech models](#5-fine-tuning-text-to-speech-models)
+   - [Zero-shot image classification](#zero-shot-image-classification)
+     - [1. Scenario and intuition](#1-scenario-and-intuition)
+     - [2. Step-by-step with CLIP](#2-step-by-step-with-clip)
+     - [3. Interpreting similarity scores](#3-interpreting-similarity-scores)
+     - [4. Cheat sheet: essential functions](#4-cheat-sheet-essential-functions)
+     - [5. Model landscape playbook for zero-shot](#5-model-landscape-playbook-for-zero-shot)
 
 ---
 
@@ -1805,8 +1811,82 @@ This scenario documents the Hugging Face tutorial that fine-tunes `microsoft/spe
 
 **Validation tip:** Visualize mel-spectrograms before and after training; aligned harmonic patterns confirm that prosody and pronunciation match the target speaker.
 
+### Zero-shot image classification
+
+This subchapter extends the Hugging Face computer-vision toolkit with the **zero-shot** workflow demonstrated in the example images. The goal is to tag unseen products (e.g., distinguishing aprons from polo shirts) without collecting labeled training data.
+
+#### 1. Scenario and intuition
+
+- **What zero-shot means:** The model generalizes to classes that were never shown during supervised fine-tuning. Instead of retraining, we express each candidate class as natural language prompts and let the model score how well the image and prompt align.
+- **Why CLIP is suited:** Contrastive Language-Image Pre-training (CLIP) jointly embeds images and text, so objects that share semantics ("a photo of a green apron") cluster near their matching pictures. This is how the example identifies "a photo of a polo shirt" versus "a photo of an apron" without task-specific training.
+- **Practical lens:** In the e-commerce scenario, we can rapidly flag new catalogue entries, route them to category-specific copywriting pipelines, or filter out low-quality uploads. More advanced patterns—such as rejecting blurry product shots—can reuse the same prompt-based classification.
+- **Cross-link:** For preprocessing guidance before scoring, reuse the normalization checklist in [Preprocessing images](#preprocessing-images).
+
+> **Best practice:** Draft prompts that mirror how customers describe items (materials, colors, sleeve length) so the model leverages both visual cues and textual priors.
+
+#### 2. Step-by-step with CLIP
+
+1. **Load the dataset:** The example uses `datasets.load_dataset("huggingface/stacked_clothing")` (or a comparable product feed) and selects a validation batch with realistic lighting and backgrounds.
+2. **Instantiate model and processor:**
+   ```python
+   from transformers import CLIPModel, CLIPProcessor
+
+   model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+   processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+   model.eval()
+   ```
+3. **Prepare candidate labels:** Represent each class as a natural sentence—`"a photo of a green apron"`, `"a photo of a polo shirt"`, `"a photo of an empty hanger"`, etc. Compose them in a list called `possible_labels`.
+4. **Tokenize images and prompts together:**
+   ```python
+   inputs = processor(
+       text=possible_labels,
+       images=batch["image"],
+       return_tensors="pt",
+       padding=True
+   )
+   ```
+5. **Score and pick the best match:** Forward pass through CLIP, take the `logits_per_image`, and select the index of the highest value to retrieve the predicted label.
+
+ASCII flowchart of the inference loop:
+
+```
++-----------------------------+     +-----------------------------+     +-------------------------------+     +------------------------------+
+|       Load image batch       | --> |   Craft natural prompts     | --> | Encode with CLIP processor    | --> | Compare logits & assign tag  |
++-----------------------------+     +-----------------------------+     +-------------------------------+     +------------------------------+
+```
+
+This mirrors the screenshots: the image of the airplane is associated with prompts like "a photo of a airplane", and the clothing photo is classified by iterating over apparel-specific descriptions.
+
+#### 3. Interpreting similarity scores
+
+- **CLIPScore (0–100):** `torcheval.metrics.functional.multimodal.clip_score` rescales the cosine similarity between text and image embeddings to an intuitive range. In the example, a value around 28 indicates a meaningful but not perfect match; higher values mean the text description tightly matches the visual content.
+- **Logits intuition:** `logits_per_image.softmax(dim=-1)` transforms raw similarities into probabilities across the prompt list. Monitoring these softmax scores helps detect ambiguous cases when multiple prompts receive comparable confidence.
+- **Quality control:** Aggregate CLIP scores over the catalog to surface items that fail all prompts (e.g., unrecognizable photos) and trigger manual review.
+
+> **General rule:** When prompts yield uniformly low scores, revisit image quality and textual phrasing before assuming the model is incapable of the classification task.
+
+#### 4. Cheat sheet: essential functions
+
+| Component | Purpose | Example usage |
+| --- | --- | --- |
+| `CLIPModel.from_pretrained` | Loads vision-text checkpoints that produce aligned embeddings. | `CLIPModel.from_pretrained("openai/clip-vit-base-patch32")` |
+| `CLIPProcessor.from_pretrained` | Normalizes images, tokenizes prompts, and prepares tensors for CLIP. | `processor(images=img, text=labels, return_tensors="pt")` |
+| `logits_per_image.softmax` | Converts similarity scores into probability-style weights. | `probs = logits_per_image.softmax(dim=-1)` |
+| `clip_score` (Torcheval) | Quantifies agreement between an image and a caption on a 0–100 scale. | `clip_score(image_tensor, text_tensor, model_id="openai/clip-vit-base-patch32")` |
+| `datasets.Dataset.map` | Applies prompt or image preprocessing in batches for efficiency. | `dataset.map(process_batch, batched=True)` |
+
+#### 5. Model landscape playbook for zero-shot
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `openai/clip-vit-base-patch32` | General-purpose zero-shot tagging and retrieval. | Lightweight, widely documented, fast CPU inference. | Struggles with fine-grained differences (e.g., fabric patterns) without prompt engineering. |
+| `laion/CLIP-ViT-H-14-laion2B-s32B-b79K` | High-accuracy cross-modal search across diverse web imagery. | Large training corpus, better long-tail recognition. | Requires significant GPU memory; slower latency. |
+| `google/siglip-base-patch16-224` | Multilingual image-text matching and classification. | Improved multilingual prompts, robust to varied descriptions. | Slightly newer API; fewer downstream examples than CLIP. |
+| `Salesforce/blip-itm-large-coco` | Product discovery with caption grounding and retrieval. | Integrates captioning and matching for richer annotations. | Heavier model; requires paired image-text data for best results. |
+| `microsoft/beit-base-patch16-224-pt22k-ft22k` + prompt tuning | Domain adaptation when CLIP underperforms on specialized catalogs. | Strong visual backbone adaptable via adapters or LoRA. | Needs light fine-tuning; not zero-shot out of the box. |
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, pipeline task evaluation guidelines, and speech-focused generation workflows.*
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, and speech-focused generation workflows.*
 
 
