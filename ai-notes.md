@@ -19,11 +19,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [1. Transformers Overview](#1-transformers-overview)
      - [2. Install the Library](#2-install-the-library)
      - [3. Navigating the Model Hub](#3-navigating-the-model-hub)
-     - [4. Pipelines Quickstart](#4-pipelines-quickstart)
-     - [5. Pipeline Execution Internals](#5-pipeline-execution-internals)
-     - [6. Model Management and Caching](#6-model-management-and-caching)
-     - [7. Version Checks and Quick Tests](#7-version-checks-and-quick-tests)
-     - [8. Task Selection and Model Matching](#8-task-selection-and-model-matching)
+     - [4. Model Repositories, Classes, and Checkpoints](#4-model-repositories-classes-and-checkpoints)
+     - [5. Pipelines Quickstart](#5-pipelines-quickstart)
+     - [6. Pipeline Execution Internals](#6-pipeline-execution-internals)
+     - [7. Model Management and Caching](#7-model-management-and-caching)
+     - [8. Version Checks and Quick Tests](#8-version-checks-and-quick-tests)
+     - [9. Task Selection and Model Matching](#9-task-selection-and-model-matching)
    - [Datasets](#datasets)
      - [1. Load a Dataset](#1-load-a-dataset)
      - [2. Standard Splits](#2-standard-splits)
@@ -36,7 +37,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Question-Answering Natural Language Inference (QNLI)](#3-question-answering-natural-language-inference-qnli)
      - [4. Dynamic Category Assignment](#4-dynamic-category-assignment)
      - [5. Challenges of Text Classification](#5-challenges-of-text-classification)
-     - [Model Landscape Overview](#model-landscape-overview-text-classification)
+     - [6. Model Landscape Playbook](#6-model-landscape-playbook)
    - [Text Summarization](#text-summarization)
      - [1. Summarization Overview](#1-summarization-overview)
      - [2. Extractive vs. Abstractive Approaches](#2-extractive-vs-abstractive-approaches)
@@ -46,13 +47,13 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [6. Abstractive Summarization in Action](#6-abstractive-summarization-in-action)
      - [7. Controlling Summary Length with Token Parameters](#7-controlling-summary-length-with-token-parameters)
      - [8. Interpreting Token Length Effects](#8-interpreting-token-length-effects)
-     - [Model Landscape Overview](#model-landscape-overview-text-summarization)
+     - [9. Model Landscape Playbook](#9-model-landscape-playbook)
    - [Document Q&A](#document-qa)
      - [1. Concept Overview](#1-concept-overview)
      - [2. Sample Scenario](#2-sample-scenario)
      - [3. Build a Minimal Pipeline](#3-build-a-minimal-pipeline)
      - [4. Verification Checklist](#4-verification-checklist)
-     - [Model Landscape Overview](#model-landscape-overview-document-qa)
+     - [5. Model Landscape Playbook](#5-model-landscape-playbook)
    - [Auto Models and Tokenizers](#auto-models-and-tokenizers)
      - [1. AutoModel Essentials](#1-automodel-essentials)
      - [2. AutoTokenizer Workflow](#2-autotokenizer-workflow)
@@ -79,7 +80,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [3. Object detection pipeline](#3-object-detection-pipeline)
      - [4. Segmentation playbook](#4-segmentation-playbook)
      - [5. Fine-tuning computer vision models](#5-fine-tuning-computer-vision-models)
-     - [Model Landscape Overview](#model-landscape-overview-computer-vision)
+     - [6. Model Landscape Quick Reference](#6-model-landscape-quick-reference)
    - [Speech recognition and audio generation](#speech-recognition-and-audio-generation)
      - [1. Task overview](#1-task-overview)
      - [2. Model landscape overview](#2-model-landscape-overview)
@@ -353,7 +354,39 @@ The **Models** tab on [huggingface.co](https://huggingface.co/models) is the cen
 - Each **Model Card** provides: overview and intended use, example code snippets, evaluation metrics (per dataset or benchmark), training data references, licensing terms, and known limitations or ethical considerations.
 - KPIs to watch include download counts, likes, last modified date, supported tasks, and compatible libraries.
 
-#### 4. Pipelines Quickstart
+#### 4. Model Repositories, Classes, and Checkpoints
+
+Every Hugging Face model you load is the combination of three layers of abstraction. Keeping them straight prevents confusion when reading tutorials or translating code between architectures.
+
+| Layer | What it represents | Whisper example |
+| --- | --- | --- |
+| **Model repository** | The Hub container that stores config files, tokenizer assets, and one or more checkpoints. Addressed by `<owner>/<model-name>`. | `openai/whisper-tiny` |
+| **Model class** | The Python class that implements the architecture for a specific task head. Determines which forward pass signature is available. | `WhisperForConditionalGeneration` |
+| **Checkpoint** | A snapshot of learned weights and biases at a specific training step. Tells the model class how to initialize its parameters. | The weights referenced by `from_pretrained("openai/whisper-tiny")` |
+
+```python
+from transformers import WhisperForConditionalGeneration, AutoProcessor
+
+processor = AutoProcessor.from_pretrained("openai/whisper-tiny")
+model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
+```
+
+Here is what happens in detail:
+
+1. The repository name `openai/whisper-tiny` directs both the processor and the model class to the same Hub container.
+2. `AutoProcessor` downloads tokenizer files such as `vocabulary.json`, `merges.txt`, and `preprocessor_config.json` so inputs match the training regime.
+3. `WhisperForConditionalGeneration` picks the encoder–decoder architecture that Whisper uses for transcription tasks.
+4. `from_pretrained` loads the checkpoint weights (saved under files such as `pytorch_model.bin`) into that class.
+5. Once instantiated, you can call `model.generate()` to produce text tokens, and the processor will decode them back into readable text.
+
+> **General Rule:** When experimenting with a new checkpoint, inspect both the model card and the repository files; mismatched model classes and checkpoints are the fastest path to runtime errors.
+
+**Quick checklist before loading a model:**
+- Confirm the repository ID you intend to use (public vs. private fork).
+- Verify that the model class aligns with the task (e.g., `WhisperForConditionalGeneration` for ASR generation vs. `WhisperModel` for encoder-only use).
+- Review the latest checkpoint date to ensure you are not pinning an outdated snapshot.
+
+#### 5. Pipelines Quickstart
 
 `pipeline` offers a high-level interface for rapid experimentation:
 
@@ -369,7 +402,7 @@ print(result[0]["generated_text"])
 - Accepts text, audio, or vision inputs depending on the pipeline type.
 - Returns structured outputs such as generated text, classification labels, or transcription segments.
 
-#### 5. Pipeline Execution Internals
+#### 6. Pipeline Execution Internals
 
 When a pipeline runs, it orchestrates several steps:
 
@@ -381,14 +414,14 @@ When a pipeline runs, it orchestrates several steps:
 
 More details on how raw text is normalized, tokenized, and padded before modeling are provided in [Preprocessing text](#preprocessing-text).
 
-#### 6. Model Management and Caching
+#### 7. Model Management and Caching
 
 - Authenticate once with `huggingface-cli login` to access private models or higher rate limits.
 - By default, models and tokenizers are cached under `~/.cache/huggingface`; reuse of the same model avoids repeated downloads.
 - Remove a directory within the cache to force a fresh download when updated weights are released.
 - Set the `HF_HOME` environment variable if you prefer a custom cache location.
 
-#### 7. Version Checks and Quick Tests
+#### 8. Version Checks and Quick Tests
 
 Keep tooling aligned and validate that everything runs on the intended hardware:
 
@@ -418,7 +451,7 @@ print(output[0]["generated_text"])
 
 The first command synchronizes core dependencies, the second verifies PyTorch GPU support, and the final snippet confirms that a Hugging Face model can be loaded and executed locally.
 
-#### 8. Task Selection and Model Matching
+#### 9. Task Selection and Model Matching
 
 **Purpose:**
 Reduce guesswork when choosing a checkpoint by mapping your use case to the right task, filtering the Hub effectively, and validating that the model meets latency and accuracy expectations.
@@ -677,6 +710,23 @@ Text classifiers must contend with several linguistic hurdles:
 - **Sarcasm and irony:** Surface-level wording may oppose the intended sentiment, confusing literal models.
 - **Multilingual input:** Classifiers trained on one language can misinterpret code-switching or regional expressions.
 
+#### 6. Model Landscape Playbook
+
+The pipelines above map directly to widely adopted checkpoints on the Hub. Start evaluations with the following short list before branching into niche fine-tunes.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `facebook/bart-large-mnli` | Zero-shot or label-scarce classification | Handles arbitrary label sets via natural-language prompts; strong zero-shot baseline | Slower inference than distilled models; prompt phrasing impacts accuracy |
+| `distilbert-base-uncased-finetuned-sst-2-english` | Sentiment analysis for English text | Lightweight with fast inference and solid sentiment accuracy | Limited to binary sentiment; English-only |
+| `roberta-large` fine-tuned on domain data | Domain-specific multi-class classification | High accuracy when fine-tuned; robust contextual understanding | Requires substantial compute and labeled data for fine-tuning |
+
+> **General Rule:** Benchmark a lightweight distilled model first to establish latency and accuracy baselines before scaling to larger encoders.
+
+**Next steps:**
+- Capture qualitative notes alongside accuracy metrics so business stakeholders understand trade-offs.
+- When performance plateaus, explore adapters or LoRA fine-tunes on top of the shortlisted checkpoints.
+- Document any prompt templates used for zero-shot models; phrasing changes can shift outputs materially.
+
 ---
 
 ### Text Summarization
@@ -812,6 +862,23 @@ Long: Students in the robotics club built a solar-powered rover, documented each
 - **Medium setting:** Balanced token bounds retain the main actions without unnecessary detail.
 - **Longer setting:** Higher token limits allow the model to elaborate on supporting context while staying within the summarization scope.
 
+#### 9. Model Landscape Playbook
+
+Match the extractive and abstractive techniques above with the Hub checkpoints most teams rely on before exploring custom fine-tunes.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `facebook/bart-large-cnn` | Abstractive summarization of news and reports | Produces fluent, human-like summaries; strong ROUGE scores | May hallucinate facts; input length capped at 1024 tokens |
+| `google/pegasus-large` | High-quality abstractive summarization for long-form documents | Trained on diverse summarization corpora; excels at abstractive paraphrasing | Heavy GPU memory footprint; slower decoding |
+| `philschmid/bart-large-cnn-samsum` | Dialogue and meeting transcript summarization | Fine-tuned on conversational data; captures speaker turns | Less effective on formal prose or technical documents |
+
+> **General Rule:** Apply factuality checks (e.g., entailment classifiers) to abstractive outputs before publishing summaries externally.
+
+**Evaluation tips:**
+- Test candidate models on a mix of structured reports and conversational transcripts to see where domain drift appears.
+- Track latency alongside ROUGE or BERTScore so deployment teams understand the trade-offs between accuracy and throughput.
+- When hallucinations persist, pair the summarizer with retrieval-augmented prompts that anchor it to verbatim passages.
+
 ---
 
 ### Document Q&A
@@ -892,6 +959,23 @@ The model extracts the phrase "12 hours" because it matches the question’s sem
 3. **Chunking strategy:** For long PDFs, split pages or sections into overlapping chunks (~200–400 tokens) and feed each chunk to the pipeline before selecting the highest-scoring answer.
 4. **Model suitability:** If answers sound uncertain or hallucinated, try a larger QA model (e.g., `deepset/roberta-base-squad2`) or fine-tune on domain-specific Q&A pairs.
 5. **Human validation:** Keep a manual review step for high-impact answers so stakeholders can compare the model output with the authoritative source.
+
+#### 5. Model Landscape Playbook
+
+The retrieval and QA workflow above pairs best with complementary checkpoints that specialize in either extracting spans or generating natural-language answers.
+
+| Model | Primary Use Case | Strengths | Limitations |
+|-------|------------------|-----------|-------------|
+| `deepset/roberta-base-squad2` | Extractive QA over short passages | High accuracy on span extraction; well-documented pipeline support | Requires relevant passage upfront; struggles with multi-hop reasoning |
+| `facebook/dpr-question_encoder-single-nq-base` + `facebook/dpr-ctx_encoder-single-nq-base` | Dense retrieval for large corpora | Retrieves semantically similar passages at scale; integrates with Haystack | Needs vector index infrastructure; sensitive to domain shift |
+| `google/flan-t5-large` | Generative QA with instructions | Handles abstractive answers and follow-up questions; supports few-shot prompts | May hallucinate if retrieval context is missing; larger deployment footprint |
+
+> **General Rule:** Pair generative QA models with explicit retrieval context and guardrails to minimize unsupported answers.
+
+**Operational advice:**
+- Cache DPR embeddings so nightly re-indexing jobs finish quickly even as the document base grows.
+- Track answer provenance by logging which chunk ID or retrieval score produced the final response.
+- Escalate low-confidence answers to a human reviewer instead of returning a guess—especially for policy or compliance topics.
 
 ---
 
@@ -1562,45 +1646,9 @@ Fine-tuning adapts a pretrained vision model to a narrower domain, such as disti
 - **Label coverage:** Even when you only care about one class, include negative examples so the model learns to distinguish “not the target” cases. This is why pretrained detectors recognize people, vehicles, and props—they saw all of them during COCO training.
 - **Evaluation cadence:** Track metrics on every epoch and save the best checkpoint with `load_best_model_at_end=True` to simplify deployment.
 
-### Model Landscape Overview (Text Classification)
+#### 6. Model Landscape Quick Reference
 
-For workflow fundamentals, revisit [Text Classification](#text-classification). The checkpoints below are broadly adopted on the Hugging Face Hub for production-grade classification use cases.
-
-| Model | Primary Use Case | Strengths | Limitations |
-|-------|------------------|-----------|-------------|
-| `facebook/bart-large-mnli` | Zero-shot or label-scarce classification | Handles arbitrary label sets via natural-language prompts; strong zero-shot baseline | Slower inference than distilled models; prompt phrasing impacts accuracy |
-| `distilbert-base-uncased-finetuned-sst-2-english` | Sentiment analysis for English text | Lightweight with fast inference and solid sentiment accuracy | Limited to binary sentiment; English-only |
-| `roberta-large` fine-tuned on domain data | Domain-specific multi-class classification | High accuracy when fine-tuned; robust contextual understanding | Requires substantial compute and labeled data for fine-tuning |
-
-> **General Rule:** Benchmark a lightweight distilled model first to establish latency and accuracy baselines before scaling to larger encoders.
-
-### Model Landscape Overview (Text Summarization)
-
-See [Text Summarization](#text-summarization) for technique details. These models cover both extractive and abstractive needs across industries.
-
-| Model | Primary Use Case | Strengths | Limitations |
-|-------|------------------|-----------|-------------|
-| `facebook/bart-large-cnn` | Abstractive summarization of news and reports | Produces fluent, human-like summaries; strong ROUGE scores | May hallucinate facts; input length capped at 1024 tokens |
-| `google/pegasus-large` | High-quality abstractive summarization for long-form documents | Trained on diverse summarization corpora; excels at abstractive paraphrasing | Heavy GPU memory footprint; slower decoding |
-| `philschmid/bart-large-cnn-samsum` | Dialogue and meeting transcript summarization | Fine-tuned on conversational data; captures speaker turns | Less effective on formal prose or technical documents |
-
-> **General Rule:** Apply factuality checks (e.g., entailment classifiers) to abstractive outputs before publishing summaries externally.
-
-### Model Landscape Overview (Document Q&A)
-
-Operational guidance lives in [Document Q&A](#document-qa). Combine the following models to retrieve context and generate precise answers.
-
-| Model | Primary Use Case | Strengths | Limitations |
-|-------|------------------|-----------|-------------|
-| `deepset/roberta-base-squad2` | Extractive QA over short passages | High accuracy on span extraction; well-documented pipeline support | Requires relevant passage upfront; struggles with multi-hop reasoning |
-| `facebook/dpr-question_encoder-single-nq-base` + `facebook/dpr-ctx_encoder-single-nq-base` | Dense retrieval for large corpora | Retrieves semantically similar passages at scale; integrates with Haystack | Needs vector index infrastructure; sensitive to domain shift |
-| `google/flan-t5-large` | Generative QA with instructions | Handles abstractive answers and follow-up questions; supports few-shot prompts | May hallucinate if retrieval context is missing; larger deployment footprint |
-
-> **General Rule:** Pair generative QA models with explicit retrieval context and guardrails to minimize unsupported answers.
-
-### Model Landscape Overview (Computer Vision)
-
-The execution patterns for these checkpoints align with [Computer vision](#computer-vision). Select based on the vision task and deployment constraints.
+Anchor the workflows above to a short list of Hub checkpoints that balance quality, speed, and ease of deployment.
 
 | Model | Primary Use Case | Strengths | Limitations |
 |-------|------------------|-----------|-------------|
@@ -1609,6 +1657,11 @@ The execution patterns for these checkpoints align with [Computer vision](#compu
 | `briaai/RMBG-1.4` | Background removal / segmentation | Optimized for crisp cutouts; readily usable via pipelines | Narrow scope; relies on custom code (`trust_remote_code=True`) |
 
 > **General Rule:** Profile inference on target hardware early—vision transformers and detection transformers have markedly different latency profiles on CPU vs. GPU.
+
+**Adoption notes:**
+- ViT backbones respond well to mixed-precision (`fp16`) inference; profile both CPU and GPU paths when planning deployment.
+- DETR outputs benefit from post-processing thresholds tuned to your tolerance for false positives versus misses.
+- RMBG models often require color correction after compositing; keep a simple post-processing step (e.g., gamma adjustment) in the pipeline.
 
 ### Speech recognition and audio generation
 
