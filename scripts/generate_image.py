@@ -22,8 +22,8 @@ def main():
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--dtype", choices=["auto","fp16","bf16"], default="fp16")
     p.add_argument("--scheduler", choices=["auto","dpm","euler_a"], default="auto")
-    p.add_argument("--offload", action="store_true", help="Enable model CPU offload (less VRAM, slower)")
-    p.add_argument("--attn-slicing", action="store_true", help="Enable attention slicing (less VRAM, slower)")
+    p.add_argument("--attn-slicing", action="store_true", help="Enable attention slicing for memory efficiency")
+    p.add_argument("--offload", action="store_true", help="Enable model CPU offload to save VRAM")
     args = p.parse_args()
 
     # Sensible defaults per model
@@ -70,7 +70,7 @@ def main():
         pipe.enable_model_cpu_offload()   # accelerate offload
     else:
         pipe.to("cuda")
-    if args.attn-slicing or args.offload:
+    if args.attn_slicing or args.offload:
         pipe.enable_attention_slicing()
     pipe.enable_vae_slicing()
 
