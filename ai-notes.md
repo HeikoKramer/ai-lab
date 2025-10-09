@@ -118,6 +118,13 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [4. What `.to("cuda")` does](#4-what-tocuda-does)
      - [5. Seeds and scenario control](#5-seeds-and-scenario-control)
      - [6. Model landscape playbook](#6-model-landscape-playbook-2)
+   - [Video generation](#video-generation)
+     - [1. Concept overview](#1-concept-overview-3)
+     - [2. CPU offloading mechanics](#2-cpu-offloading-mechanics)
+     - [3. VRAM planning guide](#3-vram-planning-guide)
+     - [4. Strategies for limited VRAM](#4-strategies-for-limited-vram)
+     - [5. CLIP score deep dive](#5-clip-score-deep-dive)
+     - [6. Model landscape playbook](#6-model-landscape-playbook-3)
 
 ---
 
@@ -137,15 +144,18 @@ A *virtual environment* is an isolated Python workspace that keeps your project 
 
 **Commands:**
 ```bash
-# Create a new directory for your AI work
-mkdir -p ~/projects/ai-lab
-cd ~/projects/ai-lab
+# Create a new directory for your AI work (example uses a persisted WSL drive)
+mkdir -p /mnt/e/Projects/ai-lab
+cd /mnt/e/Projects/ai-lab
 
 # Create a new virtual environment
 python3 -m venv .venv
 
 # Activate the environment
 source .venv/bin/activate
+
+# Deactivate when you are done
+deactivate
 
 # Check which Python interpreter is used
 which python
@@ -168,7 +178,8 @@ These are the essential tools for Python package installation.
 
 **Command to upgrade them:**
 ```bash
-python -m pip install --upgrade pip setuptools wheel
+pip install --upgrade pip
+python -m pip install --upgrade setuptools wheel
 ```
 Expected output:
 ```
@@ -199,6 +210,13 @@ If your GPU or CUDA version is newer than the stable PyTorch release, you can in
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ```
 Nightly builds are often necessary to support new GPUs (like the RTX 5080).
+
+**Hugging Face essentials:**
+Install the core Hugging Face stack immediately after PyTorch so the wheels match the active CUDA toolkit:
+```bash
+pip install transformers diffusers accelerate safetensors sentencepiece
+```
+These packages unlock state-of-the-art model loading, text and diffusion pipelines, optimized weight formats, and tokenizer support within the same environment.
 
 ---
 
@@ -2353,8 +2371,81 @@ Each call resets the generator to the identical seed (`8675309`). The ControlNet
 For domain-specific diffusion checkpoints (e.g., product mockups or anime styles), search the Hugging Face Hub by combining the *Diffusion* library filter with your target genre. Document shortlisted models using the same task/strength/limitation format to keep evaluations consistent with the rest of this chapter.
 
 
+### Video generation
+
+#### 1. Concept overview
+
+Video generation pipelines extend diffusion or transformer-based image models by introducing temporal modeling. Each inference step now conditions on past frames to maintain motion coherence while still honoring the textual prompt. Common workflow patterns include text-to-video, image-to-video, and keyframe-to-interpolation setups that stitch motion between manually crafted frames. **Always profile the temporal scheduler settings (frame count, stride, interpolation strength) before long renders to avoid wasting GPU time on misconfigured runs.**
+
+#### 2. CPU offloading mechanics
+
+CPU offloading streams intermediate tensors (UNet weights, attention blocks, or VAE modules) from GPU to CPU RAM whenever they are idle. Framework helpers such as `pipe.enable_model_cpu_offload()` (Diffusers) move only the active submodule to the GPU for each diffusion step, then swap it back out once the step finishes. This reduces peak VRAM usage but introduces PCIe transfer latency; expect renders to slow down by 15–40% depending on bus speed and how frequently components are swapped. Combine CPU offload with mixed precision (`torch_dtype=torch.float16`) so that the time saved by reduced tensor size partly offsets the transfer overhead. **Monitor system RAM utilization—once swapping spills to disk, performance collapses.**
+
+#### 3. VRAM planning guide
+
+| Model | Typical task | Suggested VRAM (fp16) | Notes |
+| --- | --- | --- | --- |
+| `stabilityai/stable-video-diffusion-img2vid-xt` | Text- or image-conditioned short clips (14–25 frames). | 14–16 GB | Benefits from frame batching; supports `enable_model_cpu_offload` for 12 GB cards at slower speed. |
+| `ByteDance/AnimateDiff-Lightning` | AnimateDiff motion modules paired with SD 1.5 checkpoints. | 12 GB | Uses motion modules plus LoRA; VRAM spikes during attention on 768px renders. |
+| `tencent/HunyuanVideo` | High-fidelity text-to-video with long clips. | 24–32 GB | Diffusion transformer backbone; supports multi-GPU sharding for studios. |
+| `THUDM/CogVideoX-2b` | Multi-lingual text-to-video with 720p focus. | 20–24 GB | Offers CPU offloading hooks but still prefers 24 GB for 49-frame runs. |
+| `ModelScope/t2v` | Entry-level text-to-video demos. | 8–10 GB | Lower resolution (576p); ideal for experimentation and educational use. |
+| `ali-vilab/VideoCrafter2` | Image-to-video and stylized motion synthesis. | 16–20 GB | Provides latent consistency modules; requires tuned guidance to avoid flicker. |
+
+#### 4. Strategies for limited VRAM
+
+- Lower the base resolution (e.g., 512×512) and upscale the final frames with a separate super-resolution model.
+- Reduce frame count or generate clips in segments, then blend them with video editing software.
+- Switch schedulers to those with efficient step counts (DDIM, DPM++ 2M) and cap inference steps for previews.
+- Use temporal adapters (AnimateDiff, Motion LoRA) on lighter base checkpoints instead of monolithic video models.
+- Rely on feature flags such as VAE slicing, sequential VAE decoding, and attention slicing in Diffusers.
+
+Flowchart: stabilizing a resource-constrained render loop
+
+```
+            +-------------------------+
+            |       Prompt Text       |
+            +-------------------------+
+                        |
+                        v
+            +-------------------------+
+            |   Generate Key Frames   |
+            +-------------------------+
+                        |
+                        v
+            +-------------------------+
+            |  Apply CPU Offloading   |
+            +-------------------------+
+                        |
+                        v
+            +-------------------------+
+            | Evaluate CLIP Metrics   |
+            +-------------------------+
+                        |
+                        v
+            +-------------------------------+
+            | Adjust Steps / Seed / Frames  |
+            +-------------------------------+
+```
+
+#### 5. CLIP score deep dive
+
+CLIP encodes both the text prompt and each video frame into a shared embedding space. The CLIP score for a frame is the cosine similarity between those embeddings; for a clip, we typically average the per-frame scores or apply a weighted average that emphasizes key frames. Higher scores indicate stronger semantic alignment between the prompt and the visual content. Tracking CLIP scores across frames exposes temporal drift—when frames fall below a chosen threshold, re-render them with tighter guidance, increased classifier-free guidance (CFG), or seed adjustments. **Calibrate a project-specific minimum acceptable CLIP score before production runs so the automation can reject low-fidelity clips early.**
+
+If CLIP scores start dropping mid-sequence, consider: (1) lowering motion strength or interpolation weight so the model no longer overpowers the prompt, (2) refreshing the noise by switching to a nearby seed, (3) inserting control conditions (edge maps, depth maps) for anchor frames, or (4) splitting the clip and re-generating problematic spans with higher inference steps. Seeds govern the initial noise pattern, so maintaining the same seed while tweaking guidance yields reproducible variations; changing the seed explores new motion trajectories. More on deterministic seeds in [Image editing with diffusion models → Seeds and scenario control](#5-seeds-and-scenario-control).
+
+#### 6. Model landscape playbook
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `stabilityai/stable-video-diffusion-img2vid` | Turn single images into looping motion. | High frame coherence, integrates with ControlNet for camera moves. | Limited clip length (≤25 frames) without fine-tuning; needs post-upscaling. |
+| `stabilityai/stable-video-diffusion-img2vid-xt` | Text- and image-driven cinematic loops. | XT weights handle richer prompts and camera motion cues. | Longer render times; CFG >12 can induce flicker. |
+| `THUDM/CogVideoX-5b` | Long-form, multilingual text-to-video. | Strong prompt adherence, built-in VAE offloading hooks. | Requires multi-GPU or aggressive offloading; inference latency is high. |
+| `ByteDance/AnimateDiff-Lightning` | Motion LoRA drop-in for SD 1.5 derivatives. | Fast previews (4–8 steps), supports LoRA stacking. | Needs curated base model; motion strength tuning is manual. |
+| `ali-vilab/VideoCrafter2` | Stylized art motion and image-to-video. | Temporal consistency modules keep characters on-model. | GPU memory spikes during attention layers; best on ≥16 GB cards. |
+| `ModelScope/VideoComposer` | Complex scene text-to-video composition. | Supports multi-condition inputs (text, image, depth). | Setup friction (custom repo); CPU offloading slows inference sharply. |
+
 ---
 
-*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, zero-shot video classification playbooks, and visual question-answering strategies.*
-
+*Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, zero-shot video classification playbooks, visual question-answering strategies, and video generation guidance.*
 
