@@ -144,15 +144,18 @@ A *virtual environment* is an isolated Python workspace that keeps your project 
 
 **Commands:**
 ```bash
-# Create a new directory for your AI work
-mkdir -p ~/projects/ai-lab
-cd ~/projects/ai-lab
+# Create a new directory for your AI work (example uses a persisted WSL drive)
+mkdir -p /mnt/e/Projects/ai-lab
+cd /mnt/e/Projects/ai-lab
 
 # Create a new virtual environment
 python3 -m venv .venv
 
 # Activate the environment
 source .venv/bin/activate
+
+# Deactivate when you are done
+deactivate
 
 # Check which Python interpreter is used
 which python
@@ -175,7 +178,8 @@ These are the essential tools for Python package installation.
 
 **Command to upgrade them:**
 ```bash
-python -m pip install --upgrade pip setuptools wheel
+pip install --upgrade pip
+python -m pip install --upgrade setuptools wheel
 ```
 Expected output:
 ```
@@ -206,6 +210,13 @@ If your GPU or CUDA version is newer than the stable PyTorch release, you can in
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ```
 Nightly builds are often necessary to support new GPUs (like the RTX 5080).
+
+**Hugging Face essentials:**
+Install the core Hugging Face stack immediately after PyTorch so the wheels match the active CUDA toolkit:
+```bash
+pip install transformers diffusers accelerate safetensors sentencepiece
+```
+These packages unlock state-of-the-art model loading, text and diffusion pipelines, optimized weight formats, and tokenizer support within the same environment.
 
 ---
 
