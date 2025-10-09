@@ -178,8 +178,12 @@ def run_generation(args, torch_module, pipeline_fn, tokenizer, model, dtype_key,
     generator_kwargs = {
         "model": model,
         "tokenizer": tokenizer,
-        "device": args.device if torch_module.cuda.is_available() else -1,
     }
+    if torch_module.cuda.is_available():
+        if not hasattr(model, "hf_device_map"):
+            generator_kwargs["device"] = args.device
+    else:
+        generator_kwargs["device"] = -1
     if dtype_key != "auto":
         generator_kwargs["torch_dtype"] = dtype
 
