@@ -125,6 +125,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [4. Strategies for limited VRAM](#4-strategies-for-limited-vram)
      - [5. CLIP score deep dive](#5-clip-score-deep-dive)
      - [6. Model landscape playbook](#6-model-landscape-playbook-3)
+   - [Hugging Face smolagents](#hugging-face-smolagents)
 
 ---
 
@@ -2448,4 +2449,119 @@ If CLIP scores start dropping mid-sequence, consider: (1) lowering motion streng
 ---
 
 *Document generated to summarize AI environment setup for PyTorch + CUDA 12.8 with RTX 5080, core Hugging Face workflows, key text classification pipelines, text summarization techniques, document question-answering patterns, preprocessing strategies for text, images, audio, computer-vision pipelines, zero-shot image classification tactics, pipeline task evaluation guidelines, speech-focused generation workflows, multi-modal sentiment analysis, zero-shot video classification playbooks, visual question-answering strategies, and video generation guidance.*
+
+### Hugging Face smolagents
+
+#### 1. Chatbots vs. agents
+
+**Chatbots** focus on conversational turns: they predict the next response from prior text and stay within a single dialog window. **Agents** reason over goals, plan multiple steps, call tools, and iterate until a task is complete. The table below captures the operational gap.
+
+| Capability | Chatbot | Agent |
+| --- | --- | --- |
+| Goal handling | Responds to immediate prompts | Decomposes goals into sub-tasks |
+| Tool use | Rare; usually text only | Invokes APIs, code, files, web search |
+| Memory | Short conversational context | Structured state (plans, scratchpads, tool outputs) |
+| Initiative | Reactive | Proactive: can suggest next steps |
+
+**Example:** A chatbot can explain competitor pricing strategies in plain text. An agent can gather competitor pricing data by combining web search, spreadsheet parsing, and summarization, then deliver a structured report.
+
+```
++---------------+     +-------------+     +-----------------+
+|   User Goal   | --> |   Thought   | --> |     Action      |
++---------------+     +-------------+     +-----------------+
+                                               |
+                                               v
+                                      +-----------------+
+                                      |   Observation   |
+                                      +-----------------+
+                                               |
+                                               v
+                                      +-----------------+
+                                      |  Next Thought   |
+                                      +-----------------+
+```
+
+Agents repeat the cycle until the goal is satisfied or a guardrail halts execution. **Always capture observations before acting again so the agent remains grounded in verifiable data.**
+
+#### 2. Function-calling vs. code agents
+
+**Function-calling agents** (including smolagents' `ToolCallingAgent`) choose from a fixed registry of typed functions. The model emits JSON arguments, the runtime executes the selected tool, and the result returns to the model for the next decision. They excel when each sub-task is well understood and safety boundaries must be tight.
+
+```
++----------------+   +------------------+   +----------------+   +----------------+
+| Developer APIs |-->|  Tool Registry   |-->| JSON Arguments |-->| Tool Execution |
++----------------+   +------------------+   +----------------+   +----------------+
+                                                                |
+                                                                v
+                                                       +----------------+
+                                                       |   Observation  |
+                                                       +----------------+
+                                                                |
+                                                                v
+                                                       +----------------+
+                                                       |  Agent Reply   |
+                                                       +----------------+
+```
+
+**Code agents** (smolagents' `CodeAgent`) generate executable Python to orchestrate arbitrary logic. Instead of emitting arguments, the model writes code that calls libraries, runs loops, or composes multiple tools before handing back a final answer. This flexibility increases success rates on open-ended tasks but requires sandboxing and resource limits.
+
+```
++-------------+   +-----------------+   +-----------------+   +------------------+
+| User Query  |-->|  Code Planning  |-->|  Run Python     |-->| Inspect Results  |
++-------------+   +-----------------+   +-----------------+   +------------------+
+                                                          |
+                                                          v
+                                                 +------------------+
+                                                 |  Iterative Fixes |
+                                                 +------------------+
+                                                          |
+                                                          v
+                                                 +------------------+
+                                                 |  Final Response  |
+                                                 +------------------+
+```
+
+**Guideline:** Default to function-calling agents when the tool surface is curated and predictable; escalate to code agents when the task demands multi-step composition or data wrangling beyond predefined APIs.
+
+#### 3. What is Hugging Face smolagents?
+
+Hugging Face smolagents is a lightweight Python framework for building agents that run entirely on local or hosted models. It offers:
+
+- **Declarative tool definitions** via Python type hints, allowing the LLM to discover parameters automatically.
+- **Two agent flavors:** `ToolCallingAgent` for structured JSON function-calling and `CodeAgent` for Python-authoring workflows.
+- **Sandboxed execution** using persistent or ephemeral interpreters with built-in output capture.
+- **Prompt templates and scratchpads** tuned for reasoning traces that keep the model grounded in previous actions.
+- **Built-in guardrails** such as maximum steps, stop conditions, and optional human-in-the-loop approvals.
+
+```
++--------------+     +------------------+     +------------------+     +------------------+
+|  User Goal   | --> |  smolagents Core | --> |  Tool / Code Run | --> | Consolidated Log |
++--------------+     +------------------+     +------------------+     +------------------+
+                        |                        ^                          |
+                        v                        |                          v
+                +------------------+             |                +------------------+
+                |  Model (LLM)     |-------------+                |  Final Response  |
+                +------------------+                              +------------------+
+```
+
+**Example workflow:** Define a `search_company` tool (SERP API) and an `analyze_prices` tool (Pandas). The `ToolCallingAgent` selects the search function, retrieves competitor plans, then calls the analyzer to summarize pricing tiers before returning a markdown table.
+
+#### 4. Benefits of the smolagents framework
+
+- **Rapid prototyping:** Minimal boilerplate lets you register tools and run agents in a few lines, making it ideal for notebooks and experiments.
+- **Model agnostic:** Works with Hugging Face Inference Endpoints, OpenAI-compatible APIs, or local `transformers` inference.
+- **Composable safety:** Step limits, allowed tools, and result validators help enforce compliance without rewriting prompts.
+- **Transparent reasoning:** Scratchpad transcripts log every tool call, aiding debugging and audit trails.
+- **Production-ready hooks:** Async execution, streaming callbacks, and cloud deployment recipes accelerate transition from prototype to production.
+
+#### 5. Model landscape playbook for smolagents
+
+| Model | Core use case | Strengths | Limitations |
+| --- | --- | --- | --- |
+| `meta-llama/Meta-Llama-3-8B-Instruct` | General-purpose reasoning agent on consumer GPUs. | Strong instruction following; good cost/performance balance. | May require prompt refinement for long tool chains. |
+| `microsoft/Phi-3-mini-4k-instruct` | Lightweight edge deployments of smolagents. | Low memory footprint; fast JSON function-calling. | Struggles with multi-hop reasoning beyond 4k context. |
+| `google/gemma-2-9b-it` | Enterprise chat + tool orchestration. | Robust safety tuning and multi-lingual support. | Needs quantization or sharding for <16 GB VRAM devices. |
+| `Qwen/Qwen2.5-14B-Instruct` | Code-centric smolagents that write Python. | Excellent coding ability and extended context length. | Higher latency; best on high-memory GPUs or inference endpoints. |
+
+*More hands-on agent build recipes will follow in subsequent sections of this chapter.*
 
