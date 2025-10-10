@@ -126,6 +126,15 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [5. CLIP score deep dive](#5-clip-score-deep-dive)
      - [6. Model landscape playbook](#6-model-landscape-playbook-3)
    - [Hugging Face smolagents](#hugging-face-smolagents)
+     - [1. Chatbots vs. agents](#1-chatbots-vs-agents)
+     - [2. Function-calling vs. code agents](#2-function-calling-vs-code-agents)
+     - [3. What is Hugging Face smolagents?](#3-what-is-hugging-face-smolagents)
+     - [4. Benefits of the smolagents framework](#4-benefits-of-the-smolagents-framework)
+     - [5. Model landscape playbook for smolagents](#5-model-landscape-playbook-for-smolagents)
+     - [6. Agents With Tools](#6-agents-with-tools)
+     - [7. Built-in Tools](#7-built-in-tools)
+       - [Adding a Web Search Tool](#adding-a-web-search-tool)
+     - [8. Tools From the Hugging Face Hub](#8-tools-from-the-hugging-face-hub)
 
 ---
 
@@ -2564,4 +2573,63 @@ Hugging Face smolagents is a lightweight Python framework for building agents th
 | `Qwen/Qwen2.5-14B-Instruct` | Code-centric smolagents that write Python. | Excellent coding ability and extended context length. | Higher latency; best on high-memory GPUs or inference endpoints. |
 
 *More hands-on agent build recipes will follow in subsequent sections of this chapter.*
+
+#### 6. Agents With Tools
+
+Agents equipped with tool access can translate their reasoning steps into verifiable actions, whereas agents without tools must rely solely on language-model predictions. **Always grant only the minimal set of tools required for the task.**
+
+- **Without tools:** The agent can draft plans, summarize knowledge, or simulate instructions, but it cannot fetch fresh data or manipulate files. Responses remain speculative when the prompt requires up-to-date information.
+- **With tools:** The agent can execute code, call APIs, look up references, or read/write artifacts. Each tool call produces an observation that grounds subsequent reasoning and raises confidence in the final answer.
+- **When to skip tools:** Prefer tool-free agents for low-risk conversational tasks or when privacy constraints forbid external calls.
+- **When to prefer tools:** Enable tools for data retrieval, computations, document processing, or automation workflows that must reflect real system state.
+
+#### 7. Built-in Tools
+
+Smolagents bundles several ready-to-use tools so developers can validate ideas quickly before building bespoke integrations. The table highlights the most commonly used options.
+
+| Tool | Purpose | Typical usage notes |
+| --- | --- | --- |
+| `PythonInterpreterTool` | Execute Python snippets in a sandbox. | Ideal for calculations, data wrangling, or chaining library calls during reasoning. |
+| `WebSearchTool` | Query the web via the Hugging Face hosted search backend. | Returns concise result summaries; combine with follow-up parsing for deeper dives. |
+| `ArxivSearchTool` | Retrieve scientific paper abstracts from arXiv. | Useful for research agents that must cite recent publications. |
+| `DuckDuckGoSearchTool` | Privacy-friendly search powered by DuckDuckGo. | Choose this when API keys for other providers are unavailable. |
+| `FileReadTool` | Load the contents of local files into the scratchpad. | Keeps agents aligned with source material, especially for documentation tasks. |
+
+##### Adding a Web Search Tool
+
+```python
+from smolagents import CodeAgent, InferenceClientModel, WebSearchTool
+
+agent = CodeAgent(
+    model=InferenceClientModel(),
+    tools=[WebSearchTool()],
+)
+
+question = "Summarize the latest research on efficient fine-tuning for small LLMs."
+answer = agent.run(question)
+print(answer)
+```
+
+This example instantiates a `CodeAgent`, attaches the hosted `WebSearchTool`, and executes a prompt that requires live context. The agent issues a search request, reads the snippets, and composes a grounded summary before responding.
+
+#### 8. Tools From the Hugging Face Hub
+
+If the built-in catalog does not cover your workflow, you can browse the Hugging Face Hub for community-published tools. Each tool repository ships metadata, usage instructions, and versioned releases, so you can pin reliable dependencies and collaborate across teams.
+
+- **Core concept:** Tools are packaged like models or datasets and can be loaded dynamically with `load_tool`. They often wrap SaaS APIs (finance, weather), analysis libraries (Pandas, LangChain utilities), or domain-specific pipelines.
+- **Trending examples:**
+  - `huggingface-tools/google-search`: A production-grade Google Search bridge with per-region tuning.
+  - `huggingface-tools/wolfram-alpha`: Offloads symbolic math and plotting to Wolfram|Alpha.
+  - `huggingface-tools/serpapi-news`: Tracks breaking headlines for market intelligence agents.
+  - `huggingface-tools/conversational-retrieval`: Adds retrieval-augmented generation over indexed knowledge bases.
+
+To import one, call:
+
+```python
+from smolagents import load_tool
+
+news_tool = load_tool("huggingface-tools/serpapi-news", trust_remote_code=True)
+```
+
+Once loaded, include the tool in your agent's registry. **Review the repository README for authentication requirements and cost considerations before enabling the tool in production.**
 
