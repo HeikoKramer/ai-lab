@@ -2572,8 +2572,6 @@ Hugging Face smolagents is a lightweight Python framework for building agents th
 | `google/gemma-2-9b-it` | Enterprise chat + tool orchestration. | Robust safety tuning and multi-lingual support. | Needs quantization or sharding for <16 GB VRAM devices. |
 | `Qwen/Qwen2.5-14B-Instruct` | Code-centric smolagents that write Python. | Excellent coding ability and extended context length. | Higher latency; best on high-memory GPUs or inference endpoints. |
 
-*More hands-on agent build recipes will follow in subsequent sections of this chapter.*
-
 #### 6. Agents With Tools
 
 Agents equipped with tool access can translate their reasoning steps into verifiable actions, whereas agents without tools must rely solely on language-model predictions. **Always grant only the minimal set of tools required for the task.**
