@@ -4,31 +4,6 @@ This document records our very first AI Lab test run with the [`test_seeds.py`](
 
 Each image shows the same base character with a distinct emotional expression to confirm that the seed-cycling logic works end-to-end.
 
----
-
-## Emotions Generated
-- 01_happy
-- 02_sad
-- 03_angry
-- 04_surprised
-- 05_confused
-- 06_scared
-- 07_excited
-- 08_bored
-- 09_sleepy
-- 10_crying
-- 11_smiling
-- 12_blushing
-- 13_embarrassed
-- 14_determined
-- 15_laughing
-- 16_nervous
-- 17_shocked
-- 18_serious
-- 19_thinking
-- 20_shy
-
----
 
 ### Notes
 - Model: default lab-on AI image generator
