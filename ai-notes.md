@@ -135,6 +135,11 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [7. Built-in Tools](#7-built-in-tools)
        - [Adding a Web Search Tool](#adding-a-web-search-tool)
      - [8. Tools From the Hugging Face Hub](#8-tools-from-the-hugging-face-hub)
+     - [9. Creating Agents With Custom Tools](#9-creating-agents-with-custom-tools)
+       - [Anatomy of a Custom Tool](#anatomy-of-a-custom-tool)
+       - [Best Practices for Custom Tools](#best-practices-for-custom-tools)
+       - [How the Agent Uses Your Tool](#how-the-agent-uses-your-tool)
+       - [Registering a Custom Tool with Your Agent](#registering-a-custom-tool-with-your-agent)
 
 ---
 
@@ -2630,4 +2635,136 @@ news_tool = load_tool("huggingface-tools/serpapi-news", trust_remote_code=True)
 ```
 
 Once loaded, include the tool in your agent's registry. **Review the repository README for authentication requirements and cost considerations before enabling the tool in production.**
+
+#### 9. Creating Agents With Custom Tools
+
+Custom tools extend smolagents beyond the built-in catalog so your workflows can talk to proprietary APIs, internal knowledge bases, or specialized hardware. This subchapter walks through the structure of a custom tool, the conventions that keep it reliable, how the agent consumes its metadata during planning, and the registration options you need when external dependencies come into play.
+
+##### Anatomy of a Custom Tool
+
+The `@tool` decorator from `smolagents` converts a plain Python function into a structured tool definition that the agent runtime can inspect. When you decorate a function, smolagents:
+
+- Captures the function signature, type hints, and docstring to auto-generate the tool schema that the LLM sees during reasoning.
+- Wraps the function in a `Tool` object so the runtime can validate inputs, serialize arguments to JSON for tool-calling agents, and stream outputs back into the scratchpad.
+- Preserves synchronous execution by default while allowing optional arguments (for example, `timeout` or `requires_approval`) that you can pass into `@tool` to adjust runtime behavior.
+
+```python
+from smolagents import tool
+
+@tool
+def check_inventory(product_name: str) -> int:
+    """Return the available quantity of a product in the inventory CSV."""
+    import pandas as pd
+
+    df = pd.read_csv("store_inventory.csv")
+    matches = df.loc[df["product"].str.lower() == product_name.lower(), "quantity"]
+    return int(matches.squeeze()) if not matches.empty else 0
+```
+
+Under the hood, `@tool` stores metadata such as `name="check_inventory"`, the parameter list (`product_name` as a required string), the return type (`int`), and the function summary. Tool-calling agents translate this schema into the JSON arguments they emit, while code agents import the wrapped callable directly so generated Python can execute `check_inventory("t-shirt")` safely.
+
+##### Best Practices for Custom Tools
+
+Stable tools make agents predictable. Follow these guidelines so the LLM can infer intent, construct valid arguments, and avoid unsafe side effects:
+
+1. **Declare explicit parameter types.** Use Python type hints (`str`, `int`, `float`, `list[str]`, `Literal`, `Annotated`) so the runtime emits precise JSON schemas. Avoid `Any` unless a parameter truly accepts arbitrary data.
+2. **Document every argument in the docstring.** The docstring doubles as the tool description shown to the model. Mention units, accepted formats, and guardrails such as "expects ISO date" or "returns empty list when no match".
+3. **Validate inputs defensively.** Check ranges, allowed values, or missing data before performing operations. Raise informative exceptions so the agent receives a readable failure message.
+4. **Scope side effects.** Keep tools idempotent when possible. If a tool mutates state (e.g., writes a file), log the impact in the return payload so downstream steps stay grounded.
+5. **Return machine-parseable outputs.** Prefer dictionaries or dataclasses that serialize cleanly to JSON. Include both raw data and concise summaries so the agent can choose the right level of detail for its reply.
+
+**Cheat sheet – parameter definition patterns:**
+
+| Pattern | When to use it | Example |
+| --- | --- | --- |
+| Basic scalar types | Single-value inputs such as product IDs or thresholds. | `def lookup_price(sku: str, currency: str) -> float:` |
+| `Literal[...]` | Restrict the model to enumerated choices. | `region: Literal["us", "eu", "apac"]` |
+| `Annotated` | Attach format guidance or validation hints. | `Annotated[float, "percentage between 0 and 1"]` (pair with a docstring note) |
+| `Optional[...]` with defaults | Allow the model to omit non-essential arguments. | `limit: int | None = 10` |
+| Structured returns | Provide both raw data and a summary. | `-> dict[str, Any]` containing keys `"records"` and `"summary"` |
+
+**Example with rich metadata:**
+
+```python
+from typing import Annotated, Literal
+from smolagents import tool
+
+@tool
+def fetch_sales_report(
+    region: Literal["us", "eu", "apac"],
+    start_date: Annotated[str, "ISO-8601 date, e.g. 2024-01-01"],
+    end_date: Annotated[str, "ISO-8601 date, e.g. 2024-01-31"],
+    include_refunds: bool = False,
+) -> dict:
+    """Collect aggregated revenue stats for the specified region and date range."""
+    # Input validation keeps the agent's call grounded.
+    if start_date > end_date:
+        raise ValueError("start_date must be before end_date")
+
+    data = query_data_warehouse(region, start_date, end_date, include_refunds)
+    return {
+        "summary": f"Revenue for {region.upper()} from {start_date} to {end_date}",
+        "records": data,
+    }
+```
+
+Notice how the type hints, docstring, and return structure spell out expectations. This clarity lets the model compose accurate requests and parse results without hallucinating missing fields.
+
+##### How the Agent Uses Your Tool
+
+Once registered, the agent incorporates your tool into its planning loop. The flow below highlights the internal choreography:
+
+```
++------------------------+     +-------------------------+     +--------------------------+     +-------------------------+
+|      Agent Receives    | --> |    Parse Tool Schema    | --> |    Model Proposes Tool   | --> |     Execute Callable    |
+|        User Goal       |     |  (names, params, docs)  |     |   + JSON Arguments /     |     |  inside runtime guard   |
++------------------------+     +-------------------------+     |   Python source code)    |     +-------------------------+
+                                                                    |                             |
+                                                                    v                             v
+                                                            +--------------------------+     +-------------------------+
+                                                            |  Capture Observation     | --> |   Update Scratchpad     |
+                                                            +--------------------------+     +-------------------------+
+                                                                    |
+                                                                    v
+                                                            +--------------------------+
+                                                            |  Decide Next Thought /   |
+                                                            |   Produce Final Answer   |
+                                                            +--------------------------+
+```
+
+Tool metadata influences the very first planning step: the agent reads parameter names, types, and docstrings to decide whether your tool fits the current goal. Clear schemas reduce the number of reasoning iterations because the model immediately understands how to shape its arguments.
+
+##### Registering a Custom Tool with Your Agent
+
+After defining the tool, add it to the agent alongside any external libraries it must import. The `additional_authorized_imports` parameter is especially important for `CodeAgent` instances because it expands the whitelist of modules that generated Python code may import during execution.
+
+```python
+from smolagents import CodeAgent, InferenceClientModel
+
+agent = CodeAgent(
+    model=InferenceClientModel("mistral-large-latest"),
+    tools=[check_inventory],
+    additional_authorized_imports={"pandas"},
+)
+
+response = agent.run("How many medium blue hoodies do we have left?")
+```
+
+In this example, `check_inventory` relies on `pandas`. By default, the code sandbox blocks imports that are not explicitly approved to mitigate exfiltration risks. Supplying `{"pandas"}` ensures the agent can execute `import pandas as pd` without raising a security error.
+
+You can authorize multiple packages or nested modules by listing them:
+
+```python
+agent = CodeAgent(
+    model=InferenceClientModel("meta-llama/Meta-Llama-3-8B-Instruct"),
+    tools=[fetch_sales_report],
+    additional_authorized_imports={"pandas", "sqlalchemy", "custom_warehouse_client.analytics"},
+)
+```
+
+- **Granularity matters:** Provide the narrowest module path that satisfies your tool. Granting entire namespaces (`"os"`, `"subprocess"`) can open escape hatches for arbitrary commands.
+- **Pair with docstrings:** Document why each import is required so future maintainers know whether it is safe to keep enabled.
+- **Test in isolation:** Run the agent with only the authorized imports you expect; if execution fails, the error message will name the missing module so you can update the whitelist deliberately.
+
+By combining disciplined tool definitions with a clear import policy, you give smolagents enough structure to reason accurately while keeping runtime execution under control.
 
