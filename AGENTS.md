@@ -8,6 +8,7 @@
 - **Flowcharts:** Use flowcharts whenever they clarify multi-step processes. Arrange steps from left to right when space allows; otherwise, stack steps vertically. Always enclose each step in a bordered container so the chart reads visually as a flow diagram. Render flowcharts as ASCII art and center the text inside each node for consistent readability.
 - **`ai-projects_backlog.md`:** Keep all backlog entries in English, structuring each project with a clear vision, strategy, and prioritized tasks.
 - **Working with Hugging Face topics:** For every topic documented under the "Working with Hugging Face" chapter in `ai-notes.md`, verify whether specialized and widely adopted Hugging Face models exist for the topic's primary use cases. When they do, append a concise overview to the chapter that lists each model with its core use case, strengths, and limitations.
+- **Chapter structure in `ai-notes.md`:** When adding a new chapter, organize the content into meaningful sub-chapters instead of leaving everything in a single block whenever the material can be segmented for clarity.
 
 ## File-Specific Expectations
 

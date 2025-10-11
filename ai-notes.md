@@ -141,7 +141,26 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [How the Agent Uses Your Tool](#how-the-agent-uses-your-tool)
        - [Registering a Custom Tool with Your Agent](#registering-a-custom-tool-with-your-agent)
      - [10. Retrieval Augmented Generation (RAG)](#10-retrieval-augmented-generation-rag)
+       - [10.1 Concept Overview](#101-concept-overview)
+       - [10.2 LangChain Utilities for RAG](#102-langchain-utilities-for-rag)
+       - [10.3 Chunk Size Strategies](#103-chunk-size-strategies)
+       - [10.4 Vector Stores Explained](#104-vector-stores-explained)
+       - [10.5 Querying the Vector Store](#105-querying-the-vector-store)
+       - [10.6 Traditional RAG Pipeline Limitations](#106-traditional-rag-pipeline-limitations)
      - [11. Agentic RAG](#11-agentic-rag)
+       - [11.1 Concept Overview](#111-concept-overview)
+       - [11.2 Stateless vs. Stateful Tools](#112-stateless-vs-stateful-tools)
+       - [11.3 Anatomy of a Class-Based Tool](#113-anatomy-of-a-class-based-tool)
+       - [11.4 Full Agent Setup](#114-full-agent-setup)
+       - [11.5 Simulated Agent Run](#115-simulated-agent-run)
+     - [12. Working With Multi-Step Agents](#12-working-with-multi-step-agents)
+       - [12.1 Challenges of Multi-Step Agents](#121-challenges-of-multi-step-agents)
+       - [12.2 Planning Intervals in Practice](#122-planning-intervals-in-practice)
+       - [12.3 Planning Intervals vs. Reasoning Models](#123-planning-intervals-vs-reasoning-models)
+       - [12.4 Callback System Overview](#124-callback-system-overview)
+       - [12.5 Planning Step Callbacks](#125-planning-step-callbacks)
+       - [12.6 Action Step Callbacks](#126-action-step-callbacks)
+       - [12.7 Callback Playbook for Multi-Step Agents](#127-callback-playbook-for-multi-step-agents)
 
 ---
 
@@ -2772,7 +2791,7 @@ By combining disciplined tool definitions with a clear import policy, you give s
 
 #### 10. Retrieval Augmented Generation (RAG)
 
-##### Concept Overview
+##### 10.1 Concept Overview
 
 Retrieval Augmented Generation (RAG) pairs a language model with a retrieval subsystem so answers can cite up-to-date or proprietary documents instead of relying solely on pretraining weights. The agent first fetches the most relevant snippets, then injects them into the prompt that drives generation.
 
@@ -2789,7 +2808,7 @@ Retrieval Augmented Generation (RAG) pairs a language model with a retrieval sub
 
 **Always verify that the retrieved evidence truly supports the model's draft before returning the answer.**
 
-##### LangChain Utilities for RAG
+##### 10.2 LangChain Utilities for RAG
 
 LangChain supplies composable helpers that let smolagents orchestrate RAG pipelines without rewriting infrastructure code. A typical sequence loads raw documents, splits them into overlapping chunks, embeds each chunk, and stores the vectors in a searchable index.
 
@@ -2824,7 +2843,7 @@ vector_store = FAISS.from_documents(chunks, embedder)
 | `FAISS`, `Chroma`, `PGVector` | Vector store backends | Choose based on hosting constraints: in-memory FAISS for prototyping, persistent stores for production. |
 | `ConversationalRetrievalChain`, `RetrievalQA` | Retrieval + generation orchestration | Rapidly combine retrievers with LLM calls for agent responses. |
 
-##### Chunk Size Strategies
+##### 10.3 Chunk Size Strategies
 
 Chunk sizes dictate retrieval recall and prompt efficiency. Smaller chunks improve precision but risk fragmenting context; larger chunks increase recall but may exceed the model's context window.
 
@@ -2834,7 +2853,7 @@ Chunk sizes dictate retrieval recall and prompt efficiency. Smaller chunks impro
 
 **Always tune chunk size and overlap with a validation set of representative questions before deploying.** Instrument the pipeline with retrieval metrics (hit rate, MRR) to detect regressions after size adjustments.
 
-##### Vector Stores Explained
+##### 10.4 Vector Stores Explained
 
 A vector store keeps dense embeddings alongside document metadata, enabling similarity search by cosine distance or inner product. Each record typically contains the chunk content, the embedding vector, and metadata such as source path, page number, or tags.
 
@@ -2845,7 +2864,7 @@ Best practices:
 3. **Version your indexes** when documents change; rebuild embeddings after any substantive content update.
 4. **Secure the store** if it contains proprietary data—limit file system access or use managed services with encryption.
 
-##### Querying the Vector Store
+##### 10.5 Querying the Vector Store
 
 LangChain retrievers expose consistent methods such as `similarity_search`, `similarity_search_by_vector`, and `max_marginal_relevance_search`. The snippet below ranks the top three chunks, then composes a context window for the agent prompt.
 
@@ -2869,7 +2888,7 @@ References:
 
 When combining retriever output with smolagents, pass `agent_prompt` to the chosen agent (`ToolCallingAgent` or `CodeAgent`). The agent can also return the retrieved passages alongside the synthesized answer to support citations.
 
-##### Traditional RAG Pipeline Limitations
+##### 10.6 Traditional RAG Pipeline Limitations
 
 Classic RAG pipelines rely on a single retriever call and a one-shot LLM response. This structure struggles when the query spans disparate topics (e.g., meal plans, budgets, nutritional requirements) because relevant evidence may sit across multiple documents.
 
@@ -2884,7 +2903,7 @@ Agents mitigate these gaps by iterating: they can issue follow-up retrievals, ad
 
 Agentic RAG extends the classic retrieval-augmented workflow (see [Section 10](#10-retrieval-augmented-generation-rag)) by letting a smolagents runtime plan multiple retrieval cycles, critique intermediate answers, and adapt tool usage on demand. The result is a loop that continues until the agent is satisfied that each knowledge gap has been resolved.
 
-##### Concept Overview
+##### 11.1 Concept Overview
 
 ```
 +---------------+     +-------------------+     +----------------+     +---------------------+
@@ -2899,7 +2918,7 @@ Agentic RAG extends the classic retrieval-augmented workflow (see [Section 10](#
 
 **Agentic RAG always cycles through plan → act → reflect until the objective is met or a guardrail halts execution.**
 
-##### Stateless vs. Stateful Tools
+##### 11.2 Stateless vs. Stateful Tools
 
 Smolagents supports both function tools (decorated with `@tool`) and class-based tools (subclasses of `Tool`). Function tools are stateless: each call starts fresh, so they cannot remember items such as an already-populated vector store. Class-based tools hold attributes across invocations, which lets Agentic RAG reuse costly resources.
 
@@ -2910,7 +2929,7 @@ Smolagents supports both function tools (decorated with `@tool`) and class-based
 
 **Best practice: Default to stateless tools for simple, independent actions and reach for class-based tools when the agent must reuse heavy objects (embeddings, HTTP sessions, GPU models).**
 
-##### Anatomy of a Class-Based Tool
+##### 11.3 Anatomy of a Class-Based Tool
 
 ```python
 from smolagents import Tool
@@ -2949,7 +2968,7 @@ Step-by-step breakdown:
 | Execution (`forward`) | Run the main logic. | Validate inputs and handle empty results defensively. |
 | Observation logging | Return machine-readable data. | Include both raw evidence and a short summary when possible. |
 
-##### Full Agent Setup
+##### 11.4 Full Agent Setup
 
 ```python
 from smolagents import CodeAgent, InferenceClientModel
@@ -2986,7 +3005,7 @@ Agentic RAG execution flow:
                                                   +-------------+   +-------------+
 ```
 
-##### Simulated Agent Run
+##### 11.5 Simulated Agent Run
 
 Scenario: The user asks, “How do I cook salmon with herbs using professional techniques?” The agent runs with `max_steps=6`.
 
@@ -3005,3 +3024,165 @@ Scenario: The user asks, “How do I cook salmon with herbs using professional t
 
 Because `max_steps` was set to 6, the agent retained headroom for additional refinement (e.g., sourcing plating advice) but converged in three iterations. Stateful tooling avoided repeated vector store creation, keeping latency predictable across cycles.
 
+#### 12. Working With Multi-Step Agents
+
+##### 12.1 Challenges of Multi-Step Agents
+
+Multi-step agents must juggle planning, tool orchestration, and reflection without losing sight of the original objective. Typical failure patterns include:
+
+- **State drift:** Observations from earlier steps get buried in long scratchpads, so the agent repeats work or contradicts previous conclusions.
+- **Tool latency spikes:** Expensive calls (search, vector search, code execution) compound over long runs and can exceed latency budgets.
+- **Error cascades:** A single malformed tool response can poison subsequent reasoning steps unless the agent pauses to replan.
+- **Budget blindness:** Without checkpoints, agents burn through token or cost limits before reaching a final answer.
+
+**Best practice:** Instrument the planning loop so every third or fourth step is evaluated against success criteria, resource budgets, and safety constraints.
+
+##### 12.2 Planning Intervals in Practice
+
+Planning intervals add scheduled reflection points to the agent loop. Instead of replanning after every tool call, the agent commits to a short burst of actions before pausing to reassess.
+
+```python
+from smolagents import CodeAgent, InferenceClientModel
+
+agent = CodeAgent(
+    tools=[document_search_tool, itinerary_builder_tool],
+    model=InferenceClientModel("mistral-large-2407"),
+    planning_interval=3,
+    max_steps=12,
+)
+```
+
+In this configuration the agent executes up to three actions before forcing a fresh plan. Planning intervals help in three ways:
+
+1. **Bounded exploration:** The agent cannot wander indefinitely; every interval forces it to check progress against the user goal.
+2. **Focused scratchpad:** Reasoning traces are grouped by mini-plan, which keeps the context concise and easier for the model to parse.
+3. **Recovery window:** If a tool fails, the next interval gives the agent room to update its plan without looping on the error.
+
+```
++-------------+     +--------------+     +----------------+     +-------------------+
+| User Prompt | --> | Plan (3 step) | --> | Execute Actions | --> | Interval Review   |
++-------------+     +--------------+     +----------------+     +-------------------+
+                                                            |             |
+                                                            v             v
+                                                   +----------------+  +---------------+
+                                                   | Adjust Plan?   |  | Final Answer? |
+                                                   +----------------+  +---------------+
+```
+
+##### 12.3 Planning Intervals vs. Reasoning Models
+
+A **planning interval** is a runtime policy that instructs the agent when to pause and reconsider its plan. A **reasoning model** (for example, Qwen2.5-72B-Instruct or Llama-3.1-70B-Instruct) is a foundation model tuned for multi-step deliberation. The two concepts complement each other:
+
+- Planning intervals control *when* the agent thinks deeply again; reasoning models influence *how well* those thoughts are produced.
+- Switching models changes reasoning quality but does not add checkpoints. Adjusting the interval adds structure even if the underlying model stays the same.
+- Reasoning models can still hallucinate or over-iterate without interval guardrails. Conversely, intervals with a weak model may not produce high-quality revisions. Pair them for best results.
+
+##### 12.4 Callback System Overview
+
+Callbacks let you observe or modify agent execution at key touchpoints. Each callback receives the agent state plus metadata about the specific step, so you can:
+
+- Log intermediate plans or tool payloads for auditing.
+- Inject human approval gates on expensive actions.
+- Track metrics such as cumulative tokens, runtime, or retrieved sources.
+- Short-circuit the run if guardrails fail (for example, unsafe tool usage or repetitive looping).
+
+| Callback Hook | Trigger | Typical Uses |
+| --- | --- | --- |
+| Planning step | Fires before the agent commits to a plan or reflection step. | Plan validation, safety review, dynamic tool whitelisting. |
+| Action step | Fires before and after tool execution. | Usage analytics, latency measurement, approval workflows, adaptive throttling. |
+| Final answer | Fires when the agent produces its response. | Enrich answers with metadata, run compliance checks, archive transcripts. |
+
+**Always keep callback logic deterministic and fast** so it does not become the latency bottleneck.
+
+##### 12.5 Planning Step Callbacks
+
+Planning callbacks surface the agent's intent before new actions begin. You can reshape the plan, veto unsafe ideas, or emit analytics.
+
+```python
+from smolagents import PlanningStep
+
+def planning_callback(agent_step: PlanningStep, agent) -> None:
+    print("\n=== PLAN INTERVAL ===")
+    print(agent_step.plan_text[:400])
+    if "purchase" in agent_step.plan_text.lower():
+        agent.request_human_approval("Plan includes purchase. Please review.")
+
+agent = CodeAgent(
+    tools=[budget_search_tool, event_scheduler_tool],
+    model=InferenceClientModel("qwen2.5-72b-instruct"),
+    planning_interval=2,
+    callbacks={"planning": [planning_callback]},
+)
+```
+
+**Example output:**
+
+```
+=== PLAN INTERVAL ===
+1. Collect family-friendly events in Paris.
+2. Estimate total ticket costs.
+3. Cross-check dates against travel window.
+```
+
+Because the callback fires every two steps, reviewers see concise plans and can intervene before the agent books events or commits to expenses. For enterprise use, replace the print with structured logging (JSON) so dashboards can track plan revisions over time.
+
+##### 12.6 Action Step Callbacks
+
+Action callbacks wrap each tool invocation, making it easy to inspect arguments, enforce limits, or capture results for analytics.
+
+```python
+from smolagents import ActionStep
+
+def action_callback(agent_step: ActionStep, agent) -> None:
+    payload = agent_step.tool_args
+    print(f"Tool: {agent_step.tool_name} | Args: {payload}")
+    if agent_step.is_final_answer:
+        return
+    if agent_step.token_usage.total_tokens > 6000:
+        agent.stop("Token budget exceeded")
+
+agent = CodeAgent(
+    tools=[document_search_tool, csv_summarizer_tool],
+    model=InferenceClientModel("deepseek-r1"),
+    planning_interval=3,
+    callbacks={"action": [action_callback]},
+)
+```
+
+**Action callback telemetry (sample):**
+
+```
+Tool: document_search | Args: {'query': 'Paris museum passes', 'k': 5}
+Tool: csv_summarizer | Args: {'path': 'budget.csv', 'columns': ['tickets', 'meals']}
+Tool: document_search | Args: {'query': 'kid-friendly attractions', 'k': 3}
+```
+
+The callback keeps cumulative token usage in view and halts the agent if the cap is breached. Replace the print statements with a metrics exporter (for example, Prometheus) to capture latency and success rates.
+
+##### 12.7 Callback Playbook for Multi-Step Agents
+
+Combine planning and action callbacks to add rich behavior without modifying the smolagents core:
+
+- **Live dashboards:** Stream plan text and tool payloads to a web UI for stakeholder visibility.
+- **Human-in-the-loop approvals:** Require explicit confirmation before high-risk tools (payments, deployments) run.
+- **Adaptive throttling:** Skip or delay low-priority actions when token or latency budgets approach thresholds.
+- **Safety filters:** Terminate runs that mention disallowed topics or external endpoints.
+- **Knowledge capture:** Persist observations and final answers to a searchable archive for future training data.
+
+| Mechanism | Callback Hook | Implementation Hint |
+| --- | --- | --- |
+| Audit transcript export | Planning + action | Serialize `agent_step` dicts to object storage after each callback fire. |
+| Budget guardian | Action | Track `token_usage` and `elapsed` fields, calling `agent.stop()` when thresholds trip. |
+| Tool reliability scoring | Action | Record success/failure counts per tool, then adjust tool priority or availability next run. |
+| Plan refinement coach | Planning | Inject hints back into the agent via `agent.add_message()` when plans omit required constraints. |
+
+**Model landscape for multi-step agents:**
+
+| Model | Core Strengths | Limitations |
+| --- | --- | --- |
+| `qwen2.5-72b-instruct` | High-quality deliberate reasoning, strong tool-call adherence. | Requires GPU inference or high-end hosted endpoint. |
+| `llama-3.1-70b-instruct` | Balanced reasoning and fluent explanations, widely hosted. | Larger context windows cost more tokens; may need prompt compression. |
+| `mistral-large-2407` | Fast hosted option with reliable tool-use formatting. | Slightly weaker long-term planning; pair with tighter intervals. |
+| `deepseek-r1` | Chain-of-thought rich outputs ideal for diagnostics. | Verbose traces can inflate scratchpad tokens; callback pruning recommended. |
+
+Always align the model choice with your planning interval strategy: stronger models can handle longer intervals, while lighter models benefit from shorter cycles and stricter callbacks.
