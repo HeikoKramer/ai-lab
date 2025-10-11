@@ -141,6 +141,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [How the Agent Uses Your Tool](#how-the-agent-uses-your-tool)
        - [Registering a Custom Tool with Your Agent](#registering-a-custom-tool-with-your-agent)
      - [10. Retrieval Augmented Generation (RAG)](#10-retrieval-augmented-generation-rag)
+     - [11. Agentic RAG](#11-agentic-rag)
 
 ---
 
@@ -2878,4 +2879,129 @@ Classic RAG pipelines rely on a single retriever call and a one-shot LLM respons
 - **Latency spikes:** Large prompts increase token counts, leading to slower responses and higher costs.
 
 Agents mitigate these gaps by iterating: they can issue follow-up retrievals, adjust chunking heuristics on the fly, or invoke additional tools (calculators, planners) after inspecting initial evidence.
+
+#### 11. Agentic RAG
+
+Agentic RAG extends the classic retrieval-augmented workflow (see [Section 10](#10-retrieval-augmented-generation-rag)) by letting a smolagents runtime plan multiple retrieval cycles, critique intermediate answers, and adapt tool usage on demand. The result is a loop that continues until the agent is satisfied that each knowledge gap has been resolved.
+
+##### Concept Overview
+
+```
++---------------+     +-------------------+     +----------------+     +---------------------+
+|  User Intent  | --> |  Plan Retrievals  | --> |  Run Tool(s)   | --> |  Critique Evidence  |
++---------------+     +-------------------+     +----------------+     +---------------------+
+        ^                       |                         |                       |
+        |                       v                         v                       v
++---------------+     +-------------------+     +----------------+     +---------------------+
+| Update Goal   | <-- | Update Scratchpad | <-- |   Summarize    | <-- | Decide Next Action  |
++---------------+     +-------------------+     +----------------+     +---------------------+
+```
+
+**Agentic RAG always cycles through plan → act → reflect until the objective is met or a guardrail halts execution.**
+
+##### Stateless vs. Stateful Tools
+
+Smolagents supports both function tools (decorated with `@tool`) and class-based tools (subclasses of `Tool`). Function tools are stateless: each call starts fresh, so they cannot remember items such as an already-populated vector store. Class-based tools hold attributes across invocations, which lets Agentic RAG reuse costly resources.
+
+| Tool Type | State Behavior | Ideal Use Case | Example Call |
+| --- | --- | --- | --- |
+| Function tool (`@tool`) | Stateless; no attributes persist. | Quick lookups like fetching a single document chunk. | `search_docs(query="salmon herbs", k=2)` rebuilds the retriever every time. |
+| Class-based tool (`Tool` subclass) | Stateful; attributes persist between calls. | Maintaining vector stores, API clients, or caches across steps. | `recipe_search.forward("poach salmon")` reuses the same `vector_store`. |
+
+**Best practice: Default to stateless tools for simple, independent actions and reach for class-based tools when the agent must reuse heavy objects (embeddings, HTTP sessions, GPU models).**
+
+##### Anatomy of a Class-Based Tool
+
+```python
+from smolagents import Tool
+
+class RecipeSearchTool(Tool):
+    name = "recipe_search"
+    description = "Search cooking documents for herb-based salmon recipes."
+    inputs = {"query": {"type": "string", "description": "Natural language cooking question"}}
+    output_type = "string"
+
+    def __init__(self, vector_store, k: int = 5):
+        super().__init__()
+        self.vector_store = vector_store
+        self.k = k
+
+    def forward(self, query: str) -> str:
+        docs = self.vector_store.similarity_search(query, k=self.k)
+        if not docs:
+            return "Nothing found"
+        return "\n\n".join(doc.page_content for doc in docs)
+```
+
+Step-by-step breakdown:
+
+1. **Class declaration:** Extends `Tool` so smolagents can register metadata. `name`, `description`, `inputs`, and `output_type` are class attributes that become part of the tool schema.
+2. **`__init__` persistence:** Receives dependencies (`vector_store`, `k`) and stores them on `self`. The agent can now reuse the same index across every retrieval call.
+3. **`forward` execution:** Implements the actual behavior. Smolagents routes tool invocations here, passing the model's arguments.
+4. **Return discipline:** Returns a concise string. Agents may rely on structured JSON for downstream parsing; adapt the return type accordingly when planning follow-up steps.
+
+**Cheat sheet – class-based tool lifecycle:**
+
+| Stage | Purpose | Notes |
+| --- | --- | --- |
+| Metadata declaration | Describe parameters and outputs. | Keep descriptions specific so the LLM understands intent. |
+| Initialization (`__init__`) | Attach persistent dependencies. | Cache clients (vector stores, API keys) here to avoid re-creation. |
+| Execution (`forward`) | Run the main logic. | Validate inputs and handle empty results defensively. |
+| Observation logging | Return machine-readable data. | Include both raw evidence and a short summary when possible. |
+
+##### Full Agent Setup
+
+```python
+from smolagents import CodeAgent, InferenceClientModel
+
+recipe_search = RecipeSearchTool(vector_store, k=4)
+
+agent = CodeAgent(
+    model=InferenceClientModel("mistral-large-latest"),
+    tools=[recipe_search],
+    additional_authorized_imports={"langchain_community", "langchain_huggingface"},
+    max_steps=6,
+    verbosity_level=1,
+)
+```
+
+Key configuration details:
+
+- **`model`** wires the agent to the LLM endpoint. Choose a reasoning-tuned model for iterative retrieval loops.
+- **`tools`** lists the tool instances. Supplying the instantiated class retains stateful attributes for the entire session.
+- **`additional_authorized_imports`** widens the sandbox to libraries that generated code may need when post-processing results.
+- **`max_steps`** caps the plan → act → reflect loop. Lower values reduce latency but may truncate complex searches; higher values improve recall at the expense of cost. **Always size `max_steps` to exceed your longest expected retrieval chain by at least two steps (one for reflection, one for final answer).**
+- **`verbosity_level`** controls log depth. Set to 1 during development to surface intermediate reasoning traces.
+
+Agentic RAG execution flow:
+
+```
++-----------+     +-------------+     +----------------+     +-------------------+
+|   Start   | --> |   Thought   | --> |  Tool Action   | --> |   Observation     |
++-----------+     +-------------+     +----------------+     +-------------------+
+                                                         |             |
+                                                         v             v
+                                                  +-------------+   +-------------+
+                                                  | Reflection  |-->|  Finalize   |
+                                                  +-------------+   +-------------+
+```
+
+##### Simulated Agent Run
+
+Scenario: The user asks, “How do I cook salmon with herbs using professional techniques?” The agent runs with `max_steps=6`.
+
+```
+[Step 1] Thought: Need context on professional herb-based salmon methods. Will query the recipe index.
+[Step 1] Action: recipe_search({"query": "professional salmon herbs cooking techniques"})
+[Step 1] Observation: Returned 3 documents covering herb butter basting, pan-searing, and oven finishing.
+
+[Step 2] Thought: Summarize core steps and ensure temperatures are captured. Might require light reasoning.
+[Step 2] Action: Python code summarizing retrieved snippets, extracting temperatures and timing.
+[Step 2] Observation: Compiled structure -> {'sear': 'Pan-sear skin-side down with herb butter, baste continuously', 'finish': 'Bake at 200C for 10-12 minutes with lemon-herb butter'}
+
+[Step 3] Thought: All requirements satisfied. Formulate final answer with actionable steps.
+[Step 3] Final Answer: Pat fillets dry, season with herbs, pan-sear in herb butter, baste continuously, finish in 200C oven for 10-12 minutes, rest and plate with lemon-herb butter.
+```
+
+Because `max_steps` was set to 6, the agent retained headroom for additional refinement (e.g., sourcing plating advice) but converged in three iterations. Stateful tooling avoided repeated vector store creation, keeping latency predictable across cycles.
 
