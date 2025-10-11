@@ -140,6 +140,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [Best Practices for Custom Tools](#best-practices-for-custom-tools)
        - [How the Agent Uses Your Tool](#how-the-agent-uses-your-tool)
        - [Registering a Custom Tool with Your Agent](#registering-a-custom-tool-with-your-agent)
+     - [10. Retrieval Augmented Generation (RAG)](#10-retrieval-augmented-generation-rag)
 
 ---
 
@@ -2767,4 +2768,114 @@ agent = CodeAgent(
 - **Test in isolation:** Run the agent with only the authorized imports you expect; if execution fails, the error message will name the missing module so you can update the whitelist deliberately.
 
 By combining disciplined tool definitions with a clear import policy, you give smolagents enough structure to reason accurately while keeping runtime execution under control.
+
+#### 10. Retrieval Augmented Generation (RAG)
+
+##### Concept Overview
+
+Retrieval Augmented Generation (RAG) pairs a language model with a retrieval subsystem so answers can cite up-to-date or proprietary documents instead of relying solely on pretraining weights. The agent first fetches the most relevant snippets, then injects them into the prompt that drives generation.
+
+```
++--------------------+     +----------------------+     +------------------------+     +--------------------+
+|    Collect Docs    | --> |    Embed & Index     | --> |   Retrieve Top Chunks  | --> |    LLM Synthesis    |
++--------------------+     +----------------------+     +------------------------+     +--------------------+
+          |                           |                            |                           |
+          v                           v                            v                           v
++--------------------+     +----------------------+     +------------------------+     +--------------------+
+|    Clean Formats   |     |    Store Vectors     |     |   Rank by Similarity   |     |   Grounded Answer  |
++--------------------+     +----------------------+     +------------------------+     +--------------------+
+```
+
+**Always verify that the retrieved evidence truly supports the model's draft before returning the answer.**
+
+##### LangChain Utilities for RAG
+
+LangChain supplies composable helpers that let smolagents orchestrate RAG pipelines without rewriting infrastructure code. A typical sequence loads raw documents, splits them into overlapping chunks, embeds each chunk, and stores the vectors in a searchable index.
+
+```python
+from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+
+# 1) Load domain documents
+loader = PyPDFDirectoryLoader("./knowledge_base/cooking_guides")
+raw_docs = loader.load()
+
+# 2) Split into overlapping chunks
+splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
+chunks = splitter.split_documents(raw_docs)
+
+# 3) Embed with a Hugging Face model
+embedder = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
+
+# 4) Persist vectors in a FAISS index
+vector_store = FAISS.from_documents(chunks, embedder)
+```
+
+**Cheat sheet – core LangChain utilities for RAG:**
+
+| Utility | Role | When to reach for it |
+| --- | --- | --- |
+| `PyPDFDirectoryLoader`, `WebBaseLoader`, `TextLoader` | Document ingestion | Match the loader to the source format so metadata (titles, URLs) survives chunking. |
+| `RecursiveCharacterTextSplitter` | Chunk creation | Keeps semantic boundaries by backing off to smaller separators when paragraphs are long. |
+| `HuggingFaceEmbeddings` | Text embedding | Connects to Hugging Face models (e.g., `bge`, `Instructor`) for dense vector generation. |
+| `FAISS`, `Chroma`, `PGVector` | Vector store backends | Choose based on hosting constraints: in-memory FAISS for prototyping, persistent stores for production. |
+| `ConversationalRetrievalChain`, `RetrievalQA` | Retrieval + generation orchestration | Rapidly combine retrievers with LLM calls for agent responses. |
+
+##### Chunk Size Strategies
+
+Chunk sizes dictate retrieval recall and prompt efficiency. Smaller chunks improve precision but risk fragmenting context; larger chunks increase recall but may exceed the model's context window.
+
+- Start with **500–1,000 tokens (or ~700–1,400 characters)** when documents contain well-formed paragraphs.
+- Increase overlap to **150–200 tokens** when facts span sentences, such as regulatory filings or research papers.
+- Decrease chunk size to **300–400 tokens** for terse tables or FAQs so the retriever isolates exact rows.
+
+**Always tune chunk size and overlap with a validation set of representative questions before deploying.** Instrument the pipeline with retrieval metrics (hit rate, MRR) to detect regressions after size adjustments.
+
+##### Vector Stores Explained
+
+A vector store keeps dense embeddings alongside document metadata, enabling similarity search by cosine distance or inner product. Each record typically contains the chunk content, the embedding vector, and metadata such as source path, page number, or tags.
+
+Best practices:
+
+1. **Normalize embeddings** when the backend expects unit vectors (e.g., FAISS `IndexFlatIP`).
+2. **Persist metadata** that helps agents cite sources (page, section, URL) so answers stay audit-friendly.
+3. **Version your indexes** when documents change; rebuild embeddings after any substantive content update.
+4. **Secure the store** if it contains proprietary data—limit file system access or use managed services with encryption.
+
+##### Querying the Vector Store
+
+LangChain retrievers expose consistent methods such as `similarity_search`, `similarity_search_by_vector`, and `max_marginal_relevance_search`. The snippet below ranks the top three chunks, then composes a context window for the agent prompt.
+
+```python
+query = "How do I cook salmon with herbs?"
+relevant_docs = vector_store.similarity_search(query, k=3)
+
+context = "\n\n".join(
+    f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content}"
+    for doc in relevant_docs
+)
+
+agent_prompt = f"""Use the references below to answer the user's question.
+
+Question: {query}
+
+References:
+{context}
+"""
+```
+
+When combining retriever output with smolagents, pass `agent_prompt` to the chosen agent (`ToolCallingAgent` or `CodeAgent`). The agent can also return the retrieved passages alongside the synthesized answer to support citations.
+
+##### Traditional RAG Pipeline Limitations
+
+Classic RAG pipelines rely on a single retriever call and a one-shot LLM response. This structure struggles when the query spans disparate topics (e.g., meal plans, budgets, nutritional requirements) because relevant evidence may sit across multiple documents.
+
+- **Limited recall:** A static `k` might miss critical chunks unless you over-fetch, which bloats prompts.
+- **No iterative feedback:** The LLM cannot request new evidence mid-generation, so partial answers go uncorrected.
+- **Context collisions:** Injecting heterogeneous chunks can confuse the model and produce generic or contradictory summaries.
+- **Latency spikes:** Large prompts increase token counts, leading to slower responses and higher costs.
+
+Agents mitigate these gaps by iterating: they can issue follow-up retrievals, adjust chunking heuristics on the fly, or invoke additional tools (calculators, planners) after inspecting initial evidence.
 
