@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 - **Language:** All repository content, including documentation, code comments, commit messages, and configuration entries, must be written in English. Do not use emojis unless explicitly requested.
+- **Keep template guidance synchronized:** Whenever you introduce a new rule in this or any nested `AGENTS.md`, add a corresponding instruction to `templates/AGENTS.md`. Generalize the wording so it applies to any repository; never copy over repository-specific references (file names, topics, teams, tool choices, etc.). If the rule cannot be generalized, document the underlying principle in the template and keep the repository-specific implementation details only in this file.
 - **Operational notes stay internal:** Do not copy process directions or instructions addressed to AI agents into the general documentation. Keep those details only inside `AGENTS.md` files.
 - **No teaser sentences:** Do not include forward-looking placeholder lines such as "More hands-on agent build recipes will follow" in user-facing documentation. These internal planning cues belong only in `AGENTS.md` files.
 - **Scope:** These guidelines apply to the entire repository unless superseded by a more specific `AGENTS.md` in a subdirectory.
@@ -16,6 +17,7 @@
 - Treat this file as the table of contents for the repository.
 - Provide concise descriptions of important locations, projects, and documentation, each with links to the relevant files or folders.
 - Keep the overview up to date when new major areas are added.
+- Preserve any intentional emoji usage that improves navigation or readability; do not remove existing emojis from the README.
 
 ### ai-notes.md
 - Document the current understanding and key explanations from the AI development journey.
