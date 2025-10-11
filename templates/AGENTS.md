@@ -9,13 +9,14 @@
 - Continuous environment health checks ensure CUDA 12.8 is detected and GPU execution remains enabled; CPU fallbacks are treated as configuration issues.
 
 ## General Repository Rules
-- Use English across code comments, documentation, commit messages, and configuration files; omit emojis unless a task explicitly requests them.
+- Use English across code comments, documentation, commit messages, and configuration files; omit emojis unless a task explicitly requests them or they are part of an established documentation pattern (e.g., navigation aids in a README) that should be preserved.
 - Keep operational or process notes intended for automation confined to `AGENTS.md`; do not surface them in public-facing documentation.
 - Avoid teaser or placeholder sentences that promise future content.
 - Apply these guidelines repository-wide; allow more specific `AGENTS.md` files in subdirectories to override details when necessary.
 - When documenting APIs, workflows, or library collections, add cheat sheet style summaries that highlight the most relevant commands, filters, or functions.
 - Express multi-step processes with ASCII flowcharts when they improve clarity. Arrange nodes left-to-right when possible, otherwise top-to-bottom, and center the text within each bordered node.
 - Maintain backlog documents in a vision → strategy → prioritized tasks sequence and update them as progress evolves.
+- When a repository intentionally uses emojis within canonical docs like the README to improve scannability, retain them and avoid stripping the expressive formatting.
 
 ## Coding Standards
 - Prefer GPU-accelerated code paths that capitalize on the RTX 5080; explicitly configure libraries to target CUDA 12.8.
