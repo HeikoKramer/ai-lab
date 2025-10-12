@@ -171,6 +171,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [14.3 Cheat sheet: memory utilities](#143-cheat-sheet-memory-utilities)
        - [14.4 Inspecting and exporting run history](#144-inspecting-and-exporting-run-history)
        - [14.5 Augmenting memory with external stores](#145-augmenting-memory-with-external-stores)
+     - [15. Agent Output Validation](#15-agent-output-validation)
+       - [15.1 Validation overview](#151-validation-overview)
+       - [15.2 Best-practice baseline](#152-best-practice-baseline)
+       - [15.3 Strategy comparison](#153-strategy-comparison)
+       - [15.4 Validation flowchart](#154-validation-flowchart)
+       - [15.5 Cheat sheet: validation utilities](#155-cheat-sheet-validation-utilities)
 
 ---
 
@@ -3424,3 +3430,46 @@ company_agent.memory = memory
 In this setup, every planning update lands in Neo4j as a node you can traverse, while action outputs are embedded and pushed into a Chroma collection for retrieval-augmented lookups. Sharing the same `AgentMemory` keeps the manager and specialists aligned, and the callbacks ensure a durable audit trail beyond the in-memory list.
 
 When the workload is light, persisting to JSON may be enough. As trace volume grows, pairing vector search (to recall relevant past findings) with graph edges (to analyze who produced what) gives multi-agent systems both short-term recall and long-term analytics.
+
+### 15. Agent Output Validation
+
+#### 15.1 Validation overview
+
+Agent output validation protects downstream systems from malformed responses, hallucinations, and policy violations. In smolagents you can combine guardrails that evaluate final answers, intermediate reasoning, or raw tool results before they reach users. Organizing validators by objective (format, safety, correctness) keeps the review surface manageable while still allowing you to block high-risk outputs.
+
+#### 15.2 Best-practice baseline
+
+**Best Practice:** Layer lightweight checks (format, length, schema) ahead of heavy evaluators (reasoning critiques or policy models) so you fail fast on obvious issues while preserving throughput for complex reviews. This sequencing minimizes cost and latency without sacrificing coverage.
+
+#### 15.3 Strategy comparison
+
+| Strategy | Description | Pros | Cons |
+| --- | --- | --- | --- |
+| Deterministic rule checks | Hard-coded predicates (`check_answer_length`, regex formats, JSON schema validation) run synchronously in the agent loop. | Fast, predictable, easy to unit test; pairs well with structured outputs. | Limited to scenarios you anticipated; brittle when language drifts. |
+| Model-based meta-evaluation | A supervising model scores or critiques the agent's answer using a validation prompt. | Captures nuanced reasoning errors, policy issues, or semantic gaps; adaptable via prompt updates. | Adds latency and inference cost; subject to evaluator bias or drift. |
+| Hybrid cascades | Sequentially apply rule checks, then evaluator models, and finally human-in-the-loop escalation when confidence is low. | Maximizes precision by combining complementary safeguards; supports tiered responses (auto-pass, auto-fail, escalate). | Requires orchestration logic and monitoring; tuning thresholds can be time-consuming. |
+
+#### 15.4 Validation flowchart
+
+```
++----------------------+     +------------------------+     +------------------------------+
+|    Run Rule Checks   | --> |   Meta-Evaluator Pass  | --> |   Auto-Deliver Final Answer  |
++----------------------+     +------------------------+     +------------------------------+
+            |                              |                              |
+            v                              v                              v
++----------------------+     +------------------------+     +------------------------------+
+|    Rule Check Fail   |     |   Meta-Evaluator Fail  |     |  Confidence Below Threshold  |
++----------------------+     +------------------------+     +------------------------------+
+            |                              |                              |
+            v                              v                              v
++------------------------------+   +--------------------------+   +------------------------+
+|   Return Error to Agent     |   |  Trigger Auto-Correction  |   |   Escalate to Human   |
++------------------------------+   +--------------------------+   +------------------------+
+```
+
+#### 15.5 Cheat sheet: validation utilities
+
+- `final_answer_checks`: Attach functions such as `check_answer_length` to block obviously malformed outputs before they ship.
+- `check_reasoning_accuracy`: Prompt evaluators with structured context (`agent_memory`, `reasoning_steps`, `final_answer`) to catch hidden logical gaps.
+- `agent_callbacks`: Use callback hooks to log validator outcomes and emit metrics for latency, pass/fail counts, and escalation rates.
+- `exception_handling`: Wrap validator raises with actionable error messages so the agent can retry or surface the issue to operators.
