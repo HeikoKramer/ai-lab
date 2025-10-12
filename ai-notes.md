@@ -3348,40 +3348,12 @@ The diagram below shows how smolagents maintain the timeline for each run.
 
 | Call | Purpose | Usage snippet | Simulated output |
 | --- | --- | --- | --- |
-| `agent.run(task, reset=False)` | Continue a prior conversation without clearing steps. | ```python
-response = advisor.run("Can you format those skills as bullet points?", reset=False)
-``` | ```text
-Sure! Here are the skills as bullet points: ...
-``` |
-| `agent.memory.get_succinct_steps()` | Return each step minus raw model prompts for quick auditing. | ```python
-advisor.memory.get_succinct_steps()[:2]
-``` | ```text
-[{'step_number': 1, 'tool_calls': [], 'model_output': '...'}, ...]
-``` |
-| `agent.memory.get_full_steps()` | Retrieve the full dataclass payload including model inputs. | ```python
-full_log = advisor.memory.get_full_steps()
-``` | ```text
-len(full_log)
-# 6
-``` |
-| `agent.memory.return_full_code()` | Stitch together every code action issued by a `CodeAgent`. | ```python
-print(advisor.memory.return_full_code())
-``` | ```python
-# Combined Python emitted during the run...
-``` |
-| `advisor.memory.replay(advisor.logger, detailed=False)` | Stream a replay of the transcript using the configured logger. | ```python
-advisor.memory.replay(advisor.logger)
-``` | ```text
-Replaying the agent's steps:
-System prompt: ...
-Step 1 ...
-``` |
-| `advisor.memory.reset()` | Clear all steps while keeping the system prompt. | ```python
-advisor.memory.reset()
-``` | ```text
-advisor.memory.get_succinct_steps()
-# []
-``` |
+| `agent.run(task, reset=False)` | Continue a prior conversation without clearing steps. | `response = advisor.run("Can you format those skills as bullet points?", reset=False)` | `Sure! Here are the skills as bullet points: ...` |
+| `agent.memory.get_succinct_steps()` | Return each step minus raw model prompts for quick auditing. | `advisor.memory.get_succinct_steps()[:2]` | `[{'step_number': 1, 'tool_calls': [], 'model_output': '...'}, ...]` |
+| `agent.memory.get_full_steps()` | Retrieve the full dataclass payload including model inputs. | `full_log = advisor.memory.get_full_steps()` | `len(full_log)  # 6` |
+| `agent.memory.return_full_code()` | Stitch together every code action issued by a CodeAgent. | `advisor.memory.return_full_code()` | `"# Combined Python emitted during the run..."` |
+| `advisor.memory.replay(advisor.logger, detailed=False)` | Stream a replay of the transcript using the configured logger. | `advisor.memory.replay(advisor.logger, detailed=False)` | `Replaying the agent's steps...` |
+| `advisor.memory.reset()` | Clear all steps while keeping the system prompt. | `advisor.memory.reset()` | `advisor.memory.get_succinct_steps()  # []` |
 
 **Tip:** Run memory inspection in notebooks or dedicated debugging scripts so production traffic is not slowed by extra logging.
 
