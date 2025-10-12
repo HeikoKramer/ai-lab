@@ -161,6 +161,10 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [12.5 Planning Step Callbacks](#125-planning-step-callbacks)
        - [12.6 Action Step Callbacks](#126-action-step-callbacks)
        - [12.7 Callback Playbook for Multi-Step Agents](#127-callback-playbook-for-multi-step-agents)
+     - [13. Multi-Agent Systems](#13-multi-agent-systems)
+       - [13.1 Career Advisor Walkthrough](#131-career-advisor-walkthrough)
+       - [13.2 Manager Agent Flowcharts](#132-manager-agent-flowcharts)
+       - [13.3 Coordination and Shared Memory Practices](#133-coordination-and-shared-memory-practices)
 
 ---
 
@@ -3186,3 +3190,116 @@ Combine planning and action callbacks to add rich behavior without modifying the
 | `deepseek-r1` | Chain-of-thought rich outputs ideal for diagnostics. | Verbose traces can inflate scratchpad tokens; callback pruning recommended. |
 
 Always align the model choice with your planning interval strategy: stronger models can handle longer intervals, while lighter models benefit from shorter cycles and stricter callbacks.
+
+#### 13. Multi-Agent Systems
+
+Smolagents can orchestrate multiple specialized agents under a single manager to tackle compound requests. Multi-agent routing builds on the planning guidance in [12. Working With Multi-Step Agents](#12-working-with-multi-step-agents) but adds role-specific prompts, coordination protocols, and shared memory so each contributor stays aligned with the overall goal.
+
+##### 13.1 Career Advisor Walkthrough
+
+The Hugging Face tutorial frames a **Career Advisor** system that helps professionals pivot into data science. A marketing specialist submits: *"I want to switch from marketing to data science. Please help me update my resume, find companies hiring, prepare for interviews, and understand salaries."* The manager agent breaks this into four tracks—resume polish, job search, interview prep, and salary research—and calls the appropriate specialists.
+
+```python
+from smolagents import CodeAgent, InferenceClientModel, WebSearchTool
+
+resume_agent = CodeAgent(
+    tools=[WebSearchTool()],
+    model=InferenceClientModel(model_id="deepseek-ai/DeepSeek-R1"),
+    instructions="You are an expert in everything related to resumes.",
+    name="resume_agent",
+    description="Expert in resume writing and skill translation for career transitions",
+)
+
+company_agent = CodeAgent(
+    tools=[WebSearchTool()],
+    model=InferenceClientModel(model_id="deepseek-ai/DeepSeek-R1"),
+    instructions="You research companies, culture, and hiring practices for job seekers.",
+    name="company_agent",
+    description="Expert in researching companies and hiring signals for data roles",
+)
+
+interview_agent = CodeAgent(
+    tools=[WebSearchTool()],
+    model=InferenceClientModel(model_id="deepseek-ai/DeepSeek-R1"),
+    instructions="Coach candidates on interview preparation, behavioral answers, and technical drills.",
+    name="interview_agent",
+    description="Expert in interview coaching and prep sequences",
+)
+
+salary_agent = CodeAgent(
+    tools=[WebSearchTool()],
+    model=InferenceClientModel(model_id="deepseek-ai/DeepSeek-R1"),
+    instructions="Analyze salary benchmarks, regional variance, and negotiation tactics.",
+    name="salary_agent",
+    description="Expert in salary research and negotiation guidance",
+)
+
+career_manager = CodeAgent(
+    tools=[],
+    model=InferenceClientModel(model_id="deepseek-ai/DeepSeek-R1", reasoning="standard"),
+    instructions="You are an advisory agent to help professionals build stellar career transitions. Coordinate specialists, merge their findings, and return a structured plan.",
+    managed_agents=[resume_agent, company_agent, interview_agent, salary_agent],
+)
+
+result = career_manager.run(
+    "I want to switch from marketing to data science. Help me update my resume, find companies hiring, prepare for interviews, and understand salaries."
+)
+print(result)
+```
+
+**Key takeaway:** the manager never solves sub-tasks directly—it routes work to domain experts, gathers their responses, and synthesizes a final answer with clear action items.
+
+##### 13.2 Manager Agent Flowcharts
+
+**Manager reasoning loop**
+
+```
++----------------------+     +-------------------------+     +-------------------------+     +-----------------------+
+|   Ingest User Goal   | --> |   Parse Required Work   | --> |   Match Tasks to Agent  | --> |   Draft Task Schedule |
++----------------------+     +-------------------------+     +-------------------------+     +-----------------------+
+                                                                                                         |
+                                                                                                         v
++-----------------------+     +---------------------------+     +------------------------+
+|   Dispatch Workload   | --> |   Collect Agent Outputs   | --> |   Integrate Responses  |
++-----------------------+     +---------------------------+     +------------------------+
+                                                                                |
+                                                                                v
++-----------------------------+
+|   Deliver Final Playbook    |
++-----------------------------+
+```
+
+**Task distribution across specialists**
+
+```
++----------------------+     +---------------------------+     +-------------------------+
+|   Manager Decision   | --> |   Resume Task Packet      | --> |   Resume Specialist     |
++----------------------+     +---------------------------+     +-------------------------+
+
++----------------------+     +---------------------------+     +-------------------------+
+|   Manager Decision   | --> |   Interview Task Packet   | --> |   Interview Specialist  |
++----------------------+     +---------------------------+     +-------------------------+
+
++----------------------+     +---------------------------+     +-------------------------+
+|   Manager Decision   | --> |   Job Search Task Packet  | --> |   Job Search Expert     |
++----------------------+     +---------------------------+     +-------------------------+
+
++----------------------+     +---------------------------+     +-------------------------+
+|   Manager Decision   | --> |   Salary Research Packet  | --> |   Salary Specialist     |
++----------------------+     +---------------------------+     +-------------------------+
+```
+
+##### 13.3 Coordination and Shared Memory Practices
+
+Effective multi-agent deployments hinge on predictable orchestration and a common memory substrate.
+
+- **Prompts encode remit.** Give each specialist an explicit scope, success criteria, and hand-off format (tables, bullet plans). This keeps the manager from receiving free-form narratives that are hard to merge.
+- **Structure intermediate outputs.** Require agents to respond with JSON or Markdown sections so the manager can programmatically stitch the final report without re-parsing prose.
+- **Share memory via vector stores or scratchpads.** Persist shared artifacts (company shortlists, salary tables) in a retriever or centralized scratchpad the manager can re-inject into subsequent prompts. Use smolagents' `SharedState` helper or a custom Redis/Weaviate layer for low-latency reads across agents.
+- **Annotate provenance.** Have each agent tag outputs with the data source or tool used. The manager can detect conflicting evidence and request clarifications before delivering guidance.
+- **Stage execution windows.** Run high-level exploration first (job search, salary trends), then feed those insights back into detail-oriented agents (resume tailoring, interview prep) so downstream work reflects the freshest findings.
+- **Limit concurrency for dependent tasks.** When agents rely on each other's outputs, serialize runs through a manager queue. Reserve parallel execution for independent subtasks to avoid inconsistent state.
+- **Adopt callback hooks.** Reuse the planning and action callbacks from [12. Working With Multi-Step Agents](#12-working-with-multi-step-agents) to trace task routing, measure tool latency, and enforce guardrails on each specialist's loop.
+- **Implement escalation paths.** If a specialist returns low-confidence answers, instruct the manager to reroute the task to a different agent configuration or prompt a human review before finalizing recommendations.
+
+**Best practice snapshot:** *Keep shared memory structured, observable, and incrementally updated so every agent works from the same authoritative context.*
