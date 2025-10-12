@@ -165,6 +165,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
        - [13.1 Career Advisor Walkthrough](#131-career-advisor-walkthrough)
        - [13.2 Manager Agent Flowcharts](#132-manager-agent-flowcharts)
        - [13.3 Coordination and Shared Memory Practices](#133-coordination-and-shared-memory-practices)
+     - [14. Managing Agent Memory](#14-managing-agent-memory)
+       - [14.1 Memory lifecycle in smolagents](#141-memory-lifecycle-in-smolagents)
+       - [14.2 Flow of memory updates](#142-flow-of-memory-updates)
+       - [14.3 Cheat sheet: memory utilities](#143-cheat-sheet-memory-utilities)
+       - [14.4 Inspecting and exporting run history](#144-inspecting-and-exporting-run-history)
+       - [14.5 Augmenting memory with external stores](#145-augmenting-memory-with-external-stores)
 
 ---
 
@@ -3303,3 +3309,146 @@ Effective multi-agent deployments hinge on predictable orchestration and a commo
 - **Implement escalation paths.** If a specialist returns low-confidence answers, instruct the manager to reroute the task to a different agent configuration or prompt a human review before finalizing recommendations.
 
 **Best practice snapshot:** *Keep shared memory structured, observable, and incrementally updated so every agent works from the same authoritative context.*
+
+#### 14. Managing Agent Memory
+
+Memory controls how smolagents remember past thoughts, tool calls, and results. Understanding the lifecycle lets you decide when to reuse state for continuity, when to reset for safety, and how to persist transcripts for audits or analytics.
+
+##### 14.1 Memory lifecycle in smolagents
+
+- **Runtime container:** Every `MultiStepAgent` (and by extension `ToolCallingAgent` and `CodeAgent`) constructs an `AgentMemory` instance when it initializes. The memory stores a `SystemPromptStep` plus an ordered list of `TaskStep`, `PlanningStep`, `ActionStep`, and `FinalAnswerStep` entries that represent the agent's reasoning trace.
+- **Reset semantics:** `agent.run(..., reset=True)` is the default and clears prior steps before starting a new task, keeping the system prompt intact. Passing `reset=False` appends new steps to the existing list so follow-up questions can reference earlier conversations.
+- **Shared memory:** Because the `memory` attribute is a regular Python object, you can hand the same `AgentMemory` instance to multiple agents (e.g., `specialist.memory = manager.memory`) to let them contribute to a common transcript.
+- **Callback hooks:** The `CallbackRegistry` fan-outs each new `MemoryStep` to any registered callbacks, making it the primary extension point for analytics, persistence, or external storage integrations.
+
+**Always reset memory before switching tenants or security contexts so one user's private data never appears in another session.**
+
+##### 14.2 Flow of memory updates
+
+The diagram below shows how smolagents maintain the timeline for each run.
+
+```
++-------------------+     +---------------------+     +---------------------+     +-------------------------+
+|  Agent Receives   | --> |   Execute Thought   | --> |   Capture Step as   | --> |  CallbackRegistry runs  |
+|  Task + Settings  |     |  (plan/tool/code)   |     |  MemoryStep object  |     |  per-step extensions    |
++-------------------+     +---------------------+     +---------------------+     +-------------------------+
+                                                                                             |
+                                                                                             v
+                                                                                +-------------------------+
+                                                                                |  AgentMemory.steps list |
+                                                                                +-------------------------+
+                                                                                             |
+                                                                                             v
+                                                                                +-------------------------+
+                                                                                |  Downstream inspection  |
+                                                                                +-------------------------+
+```
+
+##### 14.3 Cheat sheet: memory utilities
+
+| Call | Purpose | Usage snippet | Simulated output |
+| --- | --- | --- | --- |
+| `agent.run(task, reset=False)` | Continue a prior conversation without clearing steps. | ```python
+response = advisor.run("Can you format those skills as bullet points?", reset=False)
+``` | ```text
+Sure! Here are the skills as bullet points: ...
+``` |
+| `agent.memory.get_succinct_steps()` | Return each step minus raw model prompts for quick auditing. | ```python
+advisor.memory.get_succinct_steps()[:2]
+``` | ```text
+[{'step_number': 1, 'tool_calls': [], 'model_output': '...'}, ...]
+``` |
+| `agent.memory.get_full_steps()` | Retrieve the full dataclass payload including model inputs. | ```python
+full_log = advisor.memory.get_full_steps()
+``` | ```text
+len(full_log)
+# 6
+``` |
+| `agent.memory.return_full_code()` | Stitch together every code action issued by a `CodeAgent`. | ```python
+print(advisor.memory.return_full_code())
+``` | ```python
+# Combined Python emitted during the run...
+``` |
+| `advisor.memory.replay(advisor.logger, detailed=False)` | Stream a replay of the transcript using the configured logger. | ```python
+advisor.memory.replay(advisor.logger)
+``` | ```text
+Replaying the agent's steps:
+System prompt: ...
+Step 1 ...
+``` |
+| `advisor.memory.reset()` | Clear all steps while keeping the system prompt. | ```python
+advisor.memory.reset()
+``` | ```text
+advisor.memory.get_succinct_steps()
+# []
+``` |
+
+**Tip:** Run memory inspection in notebooks or dedicated debugging scripts so production traffic is not slowed by extra logging.
+
+##### 14.4 Inspecting and exporting run history
+
+Use the full-step payload when you need a serialized transcript for debugging or compliance reviews:
+
+```python
+import json
+
+with open("career_advisor_run.json", "w", encoding="utf-8") as fp:
+    json.dump(advisor.memory.get_full_steps(), fp, indent=2)
+```
+
+`get_full_steps()` returns a JSON-friendly list, so the dump above produces a readable log for regression testing or handoffs. When you only need a quick status check, the succinct variant removes verbose prompt/response bodies to keep diffs manageable.
+
+For interactive diagnostics, call `advisor.memory.replay(advisor.logger, detailed=True)` to see the agent's prompt, plan, and observations step-by-step in the Rich console. Pair that with `advisor.memory.return_full_code()` whenever a code action misbehaves—the combined script is easier to lint than individual snippets.
+
+##### 14.5 Augmenting memory with external stores
+
+Smolagents keeps memory in-process, but the callback system makes it straightforward to mirror steps into specialized databases for multi-agent deployments.
+
+```python
+from sentence_transformers import SentenceTransformer
+from chromadb import PersistentClient
+from neo4j import GraphDatabase
+from smolagents import AgentMemory, CallbackRegistry
+from smolagents.memory import ActionStep, PlanningStep
+
+embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+vector_client = PersistentClient(path="./memory_index")
+collection = vector_client.get_or_create_collection("career_memory")
+neo4j_driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
+
+def vector_callback(step, **kwargs):
+    text = step.model_output or getattr(step, "plan", "")
+    if not text:
+        return
+    embedding = embedder.encode(text)
+    collection.add(documents=[text], embeddings=[embedding], metadatas={"step": step.step_number})
+
+def graph_callback(step, agent=None, **_):
+    summary = step.model_output or getattr(step, "plan", "")
+    if not summary:
+        return
+    with neo4j_driver.session() as session:
+        session.run(
+            "MERGE (a:Agent {name: $name})\n"
+            "MERGE (s:Step {number: $num})\n"
+            "MERGE (a)-[:EMITTED]->(s)\n"
+            "SET s.summary = $summary",
+            name=getattr(agent, "agent_name", "unknown"),
+            num=step.step_number,
+            summary=summary,
+        )
+
+memory = AgentMemory(system_prompt="You help professionals plan career transitions.")
+callbacks = CallbackRegistry()
+callbacks.register(ActionStep, vector_callback)
+callbacks.register(PlanningStep, graph_callback)
+
+manager_agent.memory = memory
+manager_agent.step_callbacks = callbacks
+resume_agent.memory = memory
+company_agent.memory = memory
+```
+
+In this setup, every planning update lands in Neo4j as a node you can traverse, while action outputs are embedded and pushed into a Chroma collection for retrieval-augmented lookups. Sharing the same `AgentMemory` keeps the manager and specialists aligned, and the callbacks ensure a durable audit trail beyond the in-memory list.
+
+When the workload is light, persisting to JSON may be enough. As trace volume grows, pairing vector search (to recall relevant past findings) with graph edges (to analyze who produced what) gives multi-agent systems both short-term recall and long-term analytics.
