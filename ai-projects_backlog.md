@@ -51,3 +51,49 @@
 - Which hosting stack best supports low-latency, on-demand synthesis without compromising privacy?
 - How can family members contribute new memories while preserving narrative coherence?
 
+## Project: NeoMutt Agent Automation
+
+### Vision
+- Transform NeoMutt into an intelligent inbox that anticipates time-sensitive actions and surfaces them proactively.
+- Keep the user in control by logging each automated step and providing simple override mechanisms.
+
+### Strategic Approach
+1. **Workflow Research**
+   - Catalogue high-value email scenarios (verification codes, account activations, calendar invites) and define desired automations.
+   - Map privacy expectations, clipboard timeouts, and notification preferences.
+2. **Agent Architecture**
+   - Select an extensible framework (e.g., Python daemon with IMAP hooks) that can observe NeoMutt events without blocking the UI.
+   - Define pluggable action modules for clipboard updates, link launching, and scripted replies.
+3. **Security & Safety**
+   - Introduce allow-lists, confirmation prompts for risky actions, and encrypted clipboard handling.
+   - Log every automated step with timestamps for auditability.
+4. **User Experience**
+   - Surface contextual status updates inside NeoMutt (e.g., sidebar widget) and optional desktop notifications.
+   - Provide pause/resume controls and quick command bindings.
+
+### Backlog
+| Priority | Task | Description | Owner | Status |
+| --- | --- | --- | --- | --- |
+| High | Define automation playbook | Document supported email scenarios, triggers, and required guardrails. | TBD | Not Started |
+| High | Prototype IMAP listener | Build a daemon that monitors new messages and emits structured events to the agent. | TBD | Not Started |
+| High | Implement OTP extractor | Detect one-time passwords, copy them to the clipboard with automatic expiration, and notify the user. | TBD | Not Started |
+| Medium | Verification link handler | Parse trusted senders and open confirmation links in the default browser after user approval. | TBD | Not Started |
+| Medium | Activity logging dashboard | Record agent actions and display them inside NeoMutt or a companion TUI panel. | TBD | Not Started |
+| Low | Scripted reply templates | Add quick-reply actions for common responses that can be triggered via shortcuts. | TBD | Not Started |
+| Low | Pause/resume command bindings | Map agent control toggles to NeoMutt keybindings for rapid overrides. | TBD | Not Started |
+
+### Milestones
+1. **Agent Foundations** – Event listener and OTP automation running locally with audit logs.
+2. **Trusted Action Suite** – Verified support for clipboard handling, link approvals, and notification workflows.
+3. **User-Controlled Launch** – Polished configuration, documentation, and safeguards ready for daily use.
+
+### Risks & Mitigations
+- **Security exposure:** Restrict automation to allow-listed senders and enforce short clipboard lifetimes for sensitive data.
+- **Workflow disruption:** Provide immediate pause controls and verbose logging to rebuild trust when automations misfire.
+- **Compliance concerns:** Ensure the agent respects corporate policies by allowing per-account configuration and opt-outs.
+
+### Open Questions
+- Which NeoMutt integration path (post-hook scripts vs. mailbox polling) offers the best balance of responsiveness and stability?
+- How should clipboard expiration and notifications behave across desktop environments?
+- What approval flow is needed before the agent opens external links automatically?
+
