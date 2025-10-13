@@ -25,6 +25,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [7. Model Management and Caching](#7-model-management-and-caching)
      - [8. Version Checks and Quick Tests](#8-version-checks-and-quick-tests)
      - [9. Task Selection and Model Matching](#9-task-selection-and-model-matching)
+     - [10. Model Outputs](#10-model-outputs)
    - [Datasets](#datasets)
      - [1. Load a Dataset](#1-load-a-dataset)
      - [2. Standard Splits](#2-standard-splits)
@@ -577,6 +578,80 @@ Reduce guesswork when choosing a checkpoint by mapping your use case to the righ
 5. **Prototype with a pipeline** using the short-listed model to validate answers on your own samples. Measure runtime and output quality before promoting it to production.
 
 **Tip:** Save curated model shortlists in a shared note or spreadsheet with columns for task, model ID, parameters, eval metrics, and qualitative observations. This institutional memory speeds up future evaluations.
+
+**Cross-links:**
+- Review the [Find Popular Models for a Task](#3-find-popular-models-for-a-task) section for automated discovery tips.
+- Model-specific fine-tuning guidance lives alongside each task chapter (for example, see [Text Summarization](#text-summarization)).
+
+#### 10. Model Outputs
+
+**Goal:** Understand how Hugging Face exposes model outputs so you can inspect, post-process, and store results consistently across tasks.
+
+**Where to find official schemas on the Hub:**
+- The **Model outputs** accordion in each Hub model card documents the return structure shown in the `pipeline` examples and the raw `model.forward` signature.
+- The [Transformers pipeline reference](https://huggingface.co/docs/transformers/main_classes/pipelines) lists the default fields for each task (for example, `summary_text` for summarization or `generated_text` for text generation) together with dtype information.
+- If a model family publishes a dedicated [Output documentation](https://huggingface.co/docs/transformers/main_classes/output) page, it explains the dataclass attributes that back the dictionary keys you receive from higher-level helpers.
+
+**Typical patterns in `pipeline` responses:**
+- Pipelines wrap results in a Python list, even for single inputs, so downstream code should index into `[0]` or iterate across batches.
+- Generated content is exposed under task-specific keys (e.g., `"summary_text"`, `"generated_text"`, `"answer"`, `"text"`). Token-level metadata such as log probabilities or `tokens` only appear when the underlying model supports them.
+- Encoder-only models (classification, embedding) usually return `label`/`score` pairs or vector tensors; decoder models surface decoded strings plus optional token sequences.
+
+> **General Rule:** Treat pipeline outputs as structured data. Normalize them (e.g., cast scores to `float`, unwrap lists, enforce key casing) before persisting or handing them to other services.
+
+**Best practices for handling model output:**
+1. **Log the raw structure first.** Save a representative JSON blob per task so schema changes from model upgrades are caught early.
+2. **Validate keys before use.** Prefer `.get()` with fallbacks or explicit `KeyError` handling to guard against checkpoint-specific differences.
+3. **Track provenance.** Include the model ID, revision, and generation parameters alongside the output to make debugging deterministic.
+4. **Automate post-processing.** Wrap trimming, detokenization, or formatting steps in small helper functions so you can unit-test them outside of notebook experiments.
+
+**Whitespace in decoded text:**
+- Subword tokenizers (BPE, SentencePiece) often encode leading spaces or merged tokens to preserve linguistic context. When detokenized, this can create double spaces, stray leading whitespace, or incorrect contractions if not cleaned.
+- Languages without explicit whitespace (e.g., Chinese, Japanese) depend on tokenizer-specific spacing heuristics. Applying English-focused cleanup can delete meaningful characters or break segmentation.
+- Downstream consumers (front-end renderers, JSON serializers) may treat trailing spaces as significant, so failing to normalize can cause layout glitches or flaky string comparisons.
+
+**`clean_up_tokenization_spaces` explained:**
+- This decoder flag collapses multiple spaces, removes stray whitespace around punctuation, and fixes common BPE artifacts (e.g., `"do n't" → "don't"`). Pipelines expose it either as a parameter (e.g., `summarizer(..., clean_up_tokenization_spaces=True)`) or through the tokenizer's `decode` method.
+- Whether it runs by default depends on the tokenizer config: check `tokenizer.clean_up_tokenization_spaces` after loading the tokenizer. Many English checkpoints enable it, while multilingual models often disable it to avoid corrupting language-specific spacing.
+- To decide if you need it, inspect sample outputs with and without cleanup. If punctuation spacing or contractions break, enable it; if characters disappear or scripts without whitespace degrade, leave it off and implement custom normalization.
+
+**Flowchart: deciding on whitespace cleanup**
+
+```
+       +---------------------------+
+       |  Inspect raw model output |
+       +-------------+-------------+
+                     |
+                     v
+       +---------------------------+
+       |  Does whitespace look ok? |
+       +-------------+-------------+
+                     |
+          +----------+-----------+
+          |                      |
+          v                      v
+ +------------------+   +---------------------------+
+ | Keep defaults as |   |  Run tokenizer.decode(... |
+ | configured       |   |  clean_up_tokenization... |
+ +--------+---------+   +---------------------------+
+          |                      |
+          v                      v
+ +------------------+   +---------------------------+
+ | Monitor outputs  |   |  Re-run sample prompts & |
+ | for drift        |   |  confirm characters stay |
+ +------------------+   |  intact                   |
+                        +-------------+-------------+
+                                      |
+                                      v
+                        +---------------------------+
+                        |  Persist cleaned results  |
+                        +---------------------------+
+```
+
+**Quick checklist before shipping decoded text:**
+- ✅ Compare raw vs. cleaned outputs in your unit tests.
+- ✅ Document the chosen setting in your deployment README or model card.
+- ✅ Re-run the inspection whenever you swap in a new tokenizer or checkpoint.
 
 ### Datasets
 
