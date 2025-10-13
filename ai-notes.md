@@ -184,9 +184,17 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [15. Agent Output Validation](#15-agent-output-validation)
        - [15.1 Validation overview](#151-validation-overview)
        - [15.2 Best-practice baseline](#152-best-practice-baseline)
-       - [15.3 Strategy comparison](#153-strategy-comparison)
-       - [15.4 Validation flowchart](#154-validation-flowchart)
-       - [15.5 Cheat sheet: validation utilities](#155-cheat-sheet-validation-utilities)
+     - [15.3 Strategy comparison](#153-strategy-comparison)
+     - [15.4 Validation flowchart](#154-validation-flowchart)
+     - [15.5 Cheat sheet: validation utilities](#155-cheat-sheet-validation-utilities)
+    - [16. Transformer Architecture Deep Dive](#transformer-architecture-deep-dive)
+      - [16.1 Encoder vs. Decoder Roles](#161-encoder-vs-decoder-roles)
+      - [16.2 Transformer Architecture Patterns](#162-transformer-architecture-patterns)
+      - [16.3 Common Structural Building Blocks](#163-common-structural-building-blocks)
+      - [16.4 BERT-Based Model Family](#164-bert-based-model-family)
+      - [16.5 Identifying a Model's Architecture](#165-identifying-a-models-architecture)
+      - [16.6 Configuration Flags and Best Practices](#166-configuration-flags-and-best-practices)
+      - [16.7 Encoder-Decoder Flow Example](#167-encoder-decoder-flow-example)
 
 ---
 
@@ -3697,3 +3705,102 @@ Agent output validation protects downstream systems from malformed responses, ha
 - `check_reasoning_accuracy`: Prompt evaluators with structured context (`agent_memory`, `reasoning_steps`, `final_answer`) to catch hidden logical gaps.
 - `agent_callbacks`: Use callback hooks to log validator outcomes and emit metrics for latency, pass/fail counts, and escalation rates.
 - `exception_handling`: Wrap validator raises with actionable error messages so the agent can retry or surface the issue to operators.
+
+---
+
+## Transformer Architecture Deep Dive
+
+This chapter expands on the [Transformers Overview](#1-transformers-overview) quick primer and captures the more detailed distinctions between encoder, decoder, and encoder-decoder designs that surfaced in the current course.
+
+### 16.1 Encoder vs. Decoder Roles
+
+- **Encoder:** Consumes the entire input sequence in parallel, builds contextualized vector representations, and produces hidden states that summarize both local token meaning and the broader sentence. Encoders do not auto-regressively predict new tokens; they focus on understanding.
+- **Decoder:** Generates output tokens step by step, attending to its previous outputs and, when available, the encoder's hidden states. Decoders are optimized for fluent generation and sequence continuation.
+- **Encoder-Decoder:** Couples both modules so the encoder analyzes the source sequence while the decoder generates a target sequence conditioned on encoder outputs. Translation, summarization, and question answering frequently adopt this setup because it balances comprehension with generation.
+
+**Key distinction:** Encoders excel at bidirectional context absorption (good for classification or span prediction), while decoders specialize in left-to-right generation (good for text continuation). Encoder-decoders bridge the two by separating understanding (encoder) from production (decoder).
+
+### 16.2 Transformer Architecture Patterns
+
+| Pattern        | Input/Output Style                                      | Typical Tasks                             | Representative Models |
+|----------------|----------------------------------------------------------|--------------------------------------------|-----------------------|
+| Encoder-only   | Input tokens → contextual embeddings → task head output | Text classification, semantic search, NER  | BERT, RoBERTa, DeBERTa |
+| Decoder-only   | Prompt tokens → generated tokens                        | Story generation, code completion, chat    | GPT-3.5, Llama 3, Gemma |
+| Encoder-Decoder| Source tokens → encoder states → decoded target tokens  | Translation, abstractive summarization, QA | T5, BART, Marian |
+
+When evaluating a new model card on Hugging Face, look for mentions of "encoder", "decoder", "seq2seq", or "causal" in the architecture summary. These cues reveal whether the model ingests full context at once, generates autoregressively, or performs both.
+
+### 16.3 Common Structural Building Blocks
+
+- **Multi-Head Self-Attention:** Enables each token to attend to others. Encoders use bidirectional self-attention, decoders use masked (causal) self-attention to prevent future-token peeking, and encoder-decoder blocks add cross-attention to read encoder states.
+- **Position-wise Feed-Forward Networks (FFNs):** Apply two linear layers with a non-linearity to every token position, refining the representations produced by attention.
+- **Residual Connections + Layer Normalization:** Surround attention and FFN blocks to stabilize gradients and enable deeper stacks.
+- **Task Heads:** Lightweight layers placed on top of the base transformer to solve downstream tasks (classification logits, span selectors, language modeling projection). Encoder-only models commonly add classification heads; decoder-only models project to the vocabulary for next-token prediction.
+
+**Best-practice reminder:** Maintain parity between attention masking logic and the architecture type. Using a causal mask inside an encoder-only model will silently break bidirectional understanding.
+
+### 16.4 BERT-Based Model Family
+
+- **Core trait:** Bidirectional encoder trained with masked language modeling, enabling deep context comprehension.
+- **Fine-tuning usage:** Add a lightweight head (classification, token classification, question answering) and train on task-specific data for a few epochs.
+- **Variants:**
+  - **RoBERTa:** Improves training dynamics with larger batches and longer training schedules.
+  - **DistilBERT:** Compresses BERT while retaining most accuracy for resource-constrained deployments.
+  - **DeBERTa:** Introduces disentangled attention for finer positional reasoning.
+- **When to reach for BERT-based encoders:** Choose them when the output is a label, score, or span derived from the input itself—sentiment analysis, intent detection, or reading comprehension. For generative answers that extend beyond the source text, switch to encoder-decoder or decoder-only alternatives.
+
+### 16.5 Identifying a Model's Architecture
+
+The fastest way to confirm a model's structure inside a Hugging Face pipeline is to inspect the loaded model and its configuration.
+
+```python
+from transformers import pipeline
+
+classifier = pipeline("text-classification", model="bert-base-uncased")
+print(classifier.model.config.is_decoder)          # False → encoder-only
+print(classifier.model.config.is_encoder_decoder)  # False → no decoder module
+
+generator = pipeline("text-generation", model="gpt2")
+print(generator.model.config.is_decoder)           # True → decoder-only
+print(generator.model.config.is_encoder_decoder)   # False
+
+translator = pipeline("translation_en_to_de", model="Helsinki-NLP/opus-mt-en-de")
+print(translator.model.config.is_decoder)          # False (decoder flag lives on decoder submodule)
+print(translator.model.config.is_encoder_decoder)  # True → encoder-decoder pair
+```
+
+**Cheat sheet:**
+
+- `pipeline.task`: Quick hint—tasks like `text-generation` almost always imply decoder-only models.
+- `config.model_type`: String labels such as `bert`, `gpt2`, or `marian` map to the families listed in Section 16.2.
+- `config.architectures`: When present, provides the exact class name (e.g., `BertForSequenceClassification`).
+
+### 16.6 Configuration Flags and Best Practices
+
+- **`is_decoder`:** Indicates whether the loaded module should apply causal masks and operate autoregressively. Expect `True` for GPT-style models and `False` for pure encoders.
+- **`is_encoder_decoder`:** Signals a seq2seq pair where the configuration encapsulates both encoder and decoder definitions. Favor this flag when distinguishing encoder-decoder models; it is reliable even if `is_decoder` on the parent model returns `False` because the decoder is a nested module.
+- **Best practice:** Check `is_encoder_decoder` first. If it returns `True`, treat the model as seq2seq. Otherwise, fall back to `is_decoder` to differentiate encoder-only (`False`) from decoder-only (`True`).
+- **Pipeline alignment:** Always match the pipeline task to the architecture. Running a translation pipeline with a decoder-only model will either fail or produce incoherent results because cross-attention weights are missing.
+
+### 16.7 Encoder-Decoder Flow Example
+
+The following flowchart traces how an encoder-decoder model (e.g., MarianMT) translates the sentence "Cats nap on the sofa" into German.
+
+```
++----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+
+|    Input Sentence    | --> |   Tokenize (src)     | --> |   Encoder Self-      | --> |   Cross-Attention    | --> |   Decoder Self-      | --> |   Softmax Over       | --> |   Detokenize         |
+|  "Cats nap on the    |     |  [CLS] Cats ...      |     |   Attention + FFN    |     |   to Encoder States  |     |   Attention + FFN    |     |   Target Vocabulary  |     |  "Katzen schlafen    |
+|   sofa"              |     |  [SEP]               |     |  (build context)     |     |  (condition output)  |     |  (auto-regressive)   |     |  (select next token) |     |   auf dem Sofa"      |
++----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+     +----------------------+
+```
+
+**Step-by-step walkthrough:**
+
+1. **Tokenization:** The source sentence becomes tokens such as `[BOS]`, `Cats`, `nap`, `on`, `the`, `sofa`, `[EOS]` with attention masks indicating valid positions.
+2. **Encoding:** The encoder processes all tokens simultaneously, producing contextual vectors—`Cats` attends to `sofa`, so the hidden state captures both subject and location.
+3. **Decoder start:** The decoder receives the start token `<pad>` (or `<s>` depending on the tokenizer) and generates one token at a time. Causal masking ensures it only attends to past decoder outputs.
+4. **Cross-attention:** At each decoding step, the decoder layers query the encoder's hidden states to ground the translation in the source sentence. For the word "schlafen", the decoder aligns strongly with the encoder vector representing "nap".
+5. **Vocabulary projection:** The decoder logits pass through a softmax to select the next German token. Teacher forcing during training would supply the gold token; during inference the model feeds back its own prediction.
+6. **Iteration:** Steps 3–5 repeat until the decoder emits the end-of-sequence token, yielding "Katzen schlafen auf dem Sofa".
+
+**Debugging tip:** If outputs repeat or ignore the source context, inspect the cross-attention masks—missing masks often mean the decoder cannot see encoder states.
