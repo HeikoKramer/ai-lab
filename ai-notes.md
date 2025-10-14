@@ -198,6 +198,15 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [16.5 Identifying a Model's Architecture](#165-identifying-a-models-architecture)
    - [16.6 Configuration Flags and Best Practices](#166-configuration-flags-and-best-practices)
    - [16.7 Encoder-Decoder Flow Example](#167-encoder-decoder-flow-example)
+4. [Model Fine-Tuning Fundamentals](#model-fine-tuning-fundamentals)
+   - [1. Why Fine-Tuning Matters](#1-why-fine-tuning-matters)
+   - [2. Lifecycle Overview](#2-lifecycle-overview)
+   - [3. Choosing Pipelines vs. Auto Classes](#3-choosing-pipelines-vs-auto-classes)
+   - [4. Preparing the Dataset](#4-preparing-the-dataset)
+   - [5. Tokenization Strategy](#5-tokenization-strategy)
+   - [6. Practical Fine-Tuning Workflow](#6-practical-fine-tuning-workflow)
+   - [7. Verifying Fine-Tuning Success](#7-verifying-fine-tuning-success)
+   - [8. Cheat Sheet: Core Fine-Tuning Calls](#8-cheat-sheet-core-fine-tuning-calls)
 
 ---
 
@@ -3807,3 +3816,147 @@ The following flowchart traces how an encoder-decoder model (e.g., MarianMT) tra
 6. **Iteration:** Steps 3–5 repeat until the decoder emits the end-of-sequence token, yielding "Katzen schlafen auf dem Sofa".
 
 **Debugging tip:** If outputs repeat or ignore the source context, inspect the cross-attention masks—missing masks often mean the decoder cannot see encoder states.
+
+---
+
+## Model Fine-Tuning Fundamentals
+
+### 1. Why Fine-Tuning Matters
+
+Fine-tuning adapts a broadly trained foundation model to the specific linguistic signals, formats, and constraints of a target domain. Pre-training alone cannot cover a team's proprietary terminology, compliance tone, or workflow-specific labeling schemes. Fine-tuning narrows this generalist knowledge, aligning outputs with the exact behaviors your application requires while reducing the number of prompt engineering workarounds that can break under distribution shift.
+
+**Best practice: Treat fine-tuning as the final alignment stage that translates general language understanding into task-level reliability.**
+
+#### When to invest in fine-tuning
+- Base prompts still need extensive manual guardrails or post-processing to stay on-topic.
+- Evaluation reveals systematic errors tied to domain vocabulary or label granularity.
+- Latency or privacy requirements prevent chaining multiple external tools for every request.
+
+### 2. Lifecycle Overview
+
+The large language model lifecycle follows a three-phase progression: broad pre-training, domain-specific fine-tuning, and deployment as a specialized assistant. Pre-training uses heterogeneous corpora to learn universal language patterns, while fine-tuning injects curated, high-quality domain data so the model learns task-specific policies such as insurance claim triage or product taxonomy alignment.
+
+```
++-------------------+     +------------------+     +-----------------------+
+|   Pre-training    | --> |   Fine-tuning    | --> |   Deployed solution   |
++-------------------+     +------------------+     +-----------------------+
+```
+
+### 3. Choosing Pipelines vs. Auto Classes
+
+The Hugging Face `pipeline()` helper automates tokenizer and model selection, making it ideal for quick experiments. However, pipeline abstractions hide configuration knobs such as custom tokenizers, gradient checkpointing, or optimizer swaps that are mandatory for reliable fine-tuning.
+
+- **Use `pipeline()` for:** Baseline comparisons, smoke tests, or demos that only need a small slice of your dataset.
+- **Use `AutoModel` + `AutoTokenizer` classes for:** Full control over model heads, padding and truncation policies, optimizer configuration, and manual evaluation loops.
+
+**Best practice: Switch from `pipeline()` to explicit auto classes as soon as you need to reproduce training runs or integrate custom metrics.** For foundational guidance on auto classes, see [Auto Models and Tokenizers](#auto-models-and-tokenizers).
+
+### 4. Preparing the Dataset
+
+Start by loading data splits that mirror production scenarios. `datasets.load_dataset()` retrieves ready-made corpora or your private data hosted on the Hugging Face Hub.
+
+```python
+from datasets import load_dataset
+
+train_data = load_dataset("imdb", split="train")
+test_data = load_dataset("imdb", split="test")
+
+train_data = train_data.shard(num_shards=4, index=0)
+test_data = test_data.shard(num_shards=4, index=0)
+```
+
+- **Shard for faster iteration:** Reduce dataset size during prototyping while keeping label balance.
+- **Mirror evaluation splits:** Maintain held-out validation data to detect overfitting early.
+- **Document provenance:** Record dataset version identifiers for reproducibility.
+
+### 5. Tokenization Strategy
+
+Selecting a tokenizer determines how domain terms map to token IDs and directly affects context window efficiency. Start by evaluating the tokenizer packaged with your chosen base checkpoint—this guarantees compatibility and leverages shared vocabulary statistics from pre-training.
+
+```python
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+```
+
+**Checklist for tokenizer selection**
+- **Coverage:** Inspect whether domain-specific terminology (e.g., medical abbreviations) breaks into excessively long subword sequences. Excessive fragmentation signals the need for a tokenizer trained on similar corpora.
+- **Normalization rules:** Confirm casing, accent handling, and Unicode normalization align with your labeling guidelines.
+- **Padding strategy:** Decide between fixed-length padding (`padding=True`) and dynamic batching to control GPU utilization.
+- **Vocabulary customization:** When coverage gaps persist, train a new tokenizer on domain text and upload it with the fine-tuned model so inference clients can mirror pre-processing.
+
+```python
+tokenized_train = tokenizer(train_data["text"], padding=True, truncation=True, max_length=64, return_tensors="pt")
+```
+
+Subword tokenization, common across modern transformer models, keeps meaningful components intact—for example, "Unbelievably" becomes `["Un", "believe", "ably"]`, providing the model with reusable morphemes while limiting vocabulary size.
+
+### 6. Practical Fine-Tuning Workflow
+
+Fine-tuning replaces the last task-specific head (e.g., classification layer) and updates the model weights using supervised signals from the prepared dataset.
+
+```
++-----------------------+     +----------------------+     +-----------------------+     +----------------------+     +------------------------+
+|   Curate dataset      | --> |  Tokenize in batches | --> |  Initialize AutoModel  | --> |  Train & evaluate    | --> |  Push artifacts & logs |
++-----------------------+     +----------------------+     +-----------------------+     +----------------------+     +------------------------+
+```
+
+```python
+from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    "bert-base-uncased",
+    num_labels=2,
+)
+
+training_args = TrainingArguments(
+    output_dir="./finetuned-imdb",
+    evaluation_strategy="epoch",
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=16,
+    learning_rate=2e-5,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    push_to_hub=True,
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_data,
+    eval_dataset=test_data,
+    tokenizer=tokenizer,
+)
+
+trainer.train()
+trainer.push_to_hub()
+```
+
+**Operational guardrails**
+- **Monitor loss curves** per epoch to catch divergence early.
+- **Freeze lower layers** when data is limited to prevent catastrophic forgetting.
+- **Log hardware metrics** (VRAM usage, throughput) to benchmark future runs.
+
+### 7. Verifying Fine-Tuning Success
+
+Successful fine-tuning shows quantitative and qualitative improvements over the base checkpoint.
+
+- **Hold-out metrics:** Track accuracy, F1, or task-specific scores on the validation split. Expect statistically significant gains vs. baseline pipeline outputs.
+- **Error analysis:** Review misclassified samples to ensure remaining failures are isolated edge cases, not systemic domain gaps.
+- **Production rehearsal:** Run shadow deployments or batch inference on historical data to confirm latency, memory usage, and output formats meet service-level objectives.
+- **Reproducibility checks:** Re-run training with the same seed to validate deterministic behavior within acceptable variance.
+
+### 8. Cheat Sheet: Core Fine-Tuning Calls
+
+| Purpose | Function | Notes |
+|---------|----------|-------|
+| Load dataset | `datasets.load_dataset()` | Supports public and private Hub entries; combine with `.shard()` for prototyping. |
+| Instantiate tokenizer | `AutoTokenizer.from_pretrained()` | Aligns tokenization with base checkpoint; extend vocabulary via `.train_new_from_iterator()` when needed. |
+| Configure model head | `AutoModelForSequenceClassification.from_pretrained()` | Swap to other task-specific heads (`AutoModelForSeq2SeqLM`, etc.) as required. |
+| Batch tokenization | `Dataset.map(tokenize_fn, batched=True)` | Keeps preprocessing on-disk and reproducible. |
+| Launch training | `Trainer.train()` | Handles gradient accumulation, mixed precision, and evaluation scheduling. |
+| Publish artifacts | `Trainer.push_to_hub()` | Uploads weights, tokenizer, and logs for downstream consumers. |
+
+**Best practice: Document every hyperparameter and dataset hash alongside the uploaded model card so downstream teams can audit lineage.**
+
+---
