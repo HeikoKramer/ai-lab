@@ -97,3 +97,56 @@
 - How should clipboard expiration and notifications behave across desktop environments?
 - What approval flow is needed before the agent opens external links automatically?
 
+## Project: Siri Shortcut Maker
+
+### Vision
+- Let users describe their desired iPhone automation in plain language and instantly receive a ready-to-run Siri Shortcut.
+- Streamline the delivery pipeline so validated shortcuts land on the target device with minimal manual intervention.
+
+### Strategic Approach
+1. **Prompt Understanding**
+   - Build a structured schema that captures intents, required inputs, triggers, and device constraints from natural-language prompts.
+   - Maintain a reusable library of shortcut patterns (e.g., text processing, device control, API integrations) for rapid composition.
+2. **Shortcut Synthesis Engine**
+   - Translate structured intents into Shortcut actions using Apple's shortcut serialization format or Shortcut Builder APIs.
+   - Incorporate validation rules to catch missing permissions, unsupported actions, or conflicting triggers before deployment.
+3. **Delivery Pipeline**
+   - Implement authenticated communication with the user's iCloud account or device for pushing the finished shortcut package.
+   - Provide staging previews (JSON + visual tree) so users can approve the automation before installation.
+4. **Safety & Feedback Loop**
+   - Track execution outcomes and user overrides to refine prompt parsing and action recommendations.
+   - Log deployment history for rollback and compliance auditing.
+
+### Flow Overview
+```
++----------------------------+    +------------------------------+    +------------------------------+    +----------------------------+
+|   Natural Language Prompt  | -> |   Intent & Pattern Matching   | -> |    Shortcut Construction     | -> |   Device Deployment & UX   |
++----------------------------+    +------------------------------+    +------------------------------+    +----------------------------+
+```
+
+### Backlog
+| Priority | Task | Description | Owner | Status |
+| --- | --- | --- | --- | --- |
+| High | Define prompt schema | Document required fields, validation rules, and mapping to Shortcut actions. | TBD | Not Started |
+| High | Build action pattern library | Catalogue reusable Shortcut templates for messaging, automation, and API calls. | TBD | Not Started |
+| High | Prototype Shortcut generator | Convert schema instances into executable Shortcut files and surface validation errors. | TBD | Not Started |
+| Medium | Implement device push service | Establish secure session with iCloud or a companion app to deliver shortcuts. | TBD | Not Started |
+| Medium | Design approval preview UI | Render shortcut tree and permissions summary for user confirmation. | TBD | Not Started |
+| Low | Telemetry dashboard | Visualize deployment history, success metrics, and rollback options. | TBD | Not Started |
+| Low | Feedback ingestion pipeline | Collect user satisfaction data to refine parsing heuristics. | TBD | Not Started |
+
+### Milestones
+1. **Schema & Pattern Alpha** – Prompt schema, validation rules, and core shortcut templates published for internal testing.
+2. **End-to-End Generator Beta** – Natural language prompt converted to a verified shortcut file with preview and error reporting.
+3. **Device Deployment Launch** – Push-to-device workflow live with approval UI, telemetry, and rollback safeguards.
+
+### Risks & Mitigations
+- **Apple platform restrictions:** Monitor Shortcut API changes and maintain fallback export paths (e.g., share links) when direct pushes fail.
+- **Permission misconfiguration:** Enforce approval gates that highlight sensitive actions (location, contacts, automation triggers) before installation.
+- **Prompt ambiguity:** Provide interactive disambiguation questions when required fields are missing or conflicting.
+
+### Open Questions
+- Which Apple authentication method (personal automation profile vs. companion app) offers the most reliable shortcut delivery?
+- How can we sandbox third-party API keys or secrets embedded in user prompts?
+- What level of versioning is needed to support iterative shortcut refinements and rollbacks?
+
