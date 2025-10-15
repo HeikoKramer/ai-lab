@@ -207,6 +207,12 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [6. Practical Fine-Tuning Workflow](#6-practical-fine-tuning-workflow)
    - [7. Verifying Fine-Tuning Success](#7-verifying-fine-tuning-success)
    - [8. Cheat Sheet: Core Fine-Tuning Calls](#8-cheat-sheet-core-fine-tuning-calls)
+5. [Trainer Hyperparameters and Model Persistence](#trainer-hyperparameters-and-model-persistence)
+   - [1. TrainingArguments Deep Dive](#1-trainingarguments-deep-dive)
+   - [2. Overfitting and Weight Decay Controls](#2-overfitting-and-weight-decay-controls)
+   - [3. Fine-Tuning State Changes and Storage](#3-fine-tuning-state-changes-and-storage)
+   - [4. Flowchart: Trainer Lifecycle](#4-flowchart-trainer-lifecycle)
+   - [5. Cheat Sheet: Training Hyperparameters](#5-cheat-sheet-training-hyperparameters)
 
 ---
 
@@ -3958,5 +3964,109 @@ Successful fine-tuning shows quantitative and qualitative improvements over the 
 | Publish artifacts | `Trainer.push_to_hub()` | Uploads weights, tokenizer, and logs for downstream consumers. |
 
 **Best practice: Document every hyperparameter and dataset hash alongside the uploaded model card so downstream teams can audit lineage.**
+
+---
+
+## Trainer Hyperparameters and Model Persistence
+
+See [Model Fine-Tuning Fundamentals](#model-fine-tuning-fundamentals) for dataset preparation and workflow context.
+
+### 1. TrainingArguments Deep Dive
+
+`TrainingArguments` from the Hugging Face `transformers` library centralizes optimizer, scheduler, logging, and checkpoint behavior for the `Trainer` API.
+
+- **`output_dir`** — Filesystem path used to store checkpoints, logs, and the final model. Pick a dedicated directory per experiment so you can track artifacts without collisions.
+- **`evaluation_strategy`** — Controls when evaluation runs (`"no"`, `"steps"`, or `"epoch"`). Use `"epoch"` for small to medium datasets where per-epoch metrics are sufficient; switch to `"steps"` for large datasets that need mid-epoch monitoring.
+- **`save_strategy`** — Mirrors evaluation scheduling but determines checkpoint creation cadence. Align it with `evaluation_strategy` to ensure every evaluation is paired with a recoverable checkpoint.
+- **`per_device_train_batch_size`** — Number of training samples per GPU (or CPU). Lower it when VRAM is constrained; scale up cautiously to improve throughput while monitoring gradient stability.
+- **`per_device_eval_batch_size`** — Evaluation batch size per device. It can exceed the training batch size because gradients are disabled, but keep it small enough to avoid out-of-memory errors during validation.
+- **`gradient_accumulation_steps`** — Virtual batch multiplier that accumulates gradients over several steps before updating weights. Combine it with smaller per-device batches to hit an effective batch size that matches learning rate assumptions.
+- **`num_train_epochs`** — Total passes through the training data. Stop as soon as validation metrics plateau to prevent overfitting; couple with early stopping callbacks for automation.
+- **`warmup_steps` / `warmup_ratio`** — Number or percentage of steps that linearly ramp the learning rate from zero to its target value. Warmup stabilizes optimization when fine-tuning large models on small datasets.
+- **`learning_rate`** — Base step size for the optimizer. Start in the `1e-5` to `5e-5` range for Transformer encoders, and experiment with slightly higher values (`1e-4`) when unfreezing lightweight classification heads.
+- **`weight_decay`** — L2 penalty applied to weights during optimization. Typical values range from `0.01` to `0.1`; see [Overfitting and Weight Decay Controls](#2-overfitting-and-weight-decay-controls) for details.
+- **`lr_scheduler_type`** — Learning rate schedule (`"linear"`, `"cosine"`, etc.). Use `"linear"` for most NLP fine-tunes; try `"cosine"` when you need gentle restarts to escape shallow minima.
+- **`logging_dir`** — Directory for TensorBoard-compatible logs. Set it explicitly when running multiple experiments so dashboards stay separated.
+- **`logging_steps`** — Interval (in update steps) for logging metrics. Calibrate it so you emit frequent enough updates for observability without overwhelming disk I/O.
+- **`load_best_model_at_end`** — Reloads the best-performing checkpoint once training completes. Enable it with `metric_for_best_model` so inference uses the highest-scoring weights.
+- **`fp16` / `bf16`** — Mixed precision flags that cut memory usage and improve throughput. Prefer `bf16` on modern GPUs with native support; otherwise use `fp16` and monitor for instability.
+
+**Always tune one hyperparameter category at a time (batch size, schedule, optimizer) to isolate performance gains.**
+
+### 2. Overfitting and Weight Decay Controls
+
+**Overfitting** occurs when a model memorizes patterns specific to the training set rather than learning generalizable features. It appears as steadily decreasing training loss accompanied by stagnant or worsening validation metrics.
+
+`weight_decay` mitigates overfitting by nudging weights toward zero during optimization:
+
+- The optimizer adds a proportional penalty (`lambda * weight`) to each parameter update, discouraging excessively large weights that encode noise.
+- Decay applies only to weight matrices, not biases or layer norm parameters, so gradients on those components stay unaffected.
+- Values between `0.01` and `0.05` are a safe starting point for Transformers. Increase toward `0.1` if validation loss diverges while training loss keeps falling; decrease toward `0.0` if the model underfits or training loss cannot reach baseline levels.
+
+Complement weight decay with early stopping, dropout, and data augmentation from [Model Fine-Tuning Fundamentals](#model-fine-tuning-fundamentals) to balance generalization and convergence.
+
+### 3. Fine-Tuning State Changes and Storage
+
+Fine-tuning updates the model's learnable parameters via backpropagation. Each optimization step adjusts the in-memory weights of the currently loaded checkpoint.
+
+- During training, gradients flow through the computation graph, modifying tensors stored in GPU and CPU memory. The original checkpoint on disk remains unchanged until you explicitly save.
+- Calling `Trainer.save_model()` or `model.save_pretrained()` serializes the updated weights, configuration, and tokenizer (when provided) into the target directory. These files represent a **new fine-tuned model variant**.
+- To reuse the fine-tuned model, load it with `AutoModel*.from_pretrained(<output_dir>)`. The base model name does not mutate; instead you reference the path (local directory or Hub repo) containing the fine-tuned weights.
+- Push artifacts to the Hugging Face Hub with `Trainer.push_to_hub()` or `model.push_to_hub()` when you need remote versioning.
+
+**Never overwrite the original pretrained checkpoint; keep a read-only copy so you can reproduce baselines or restart experiments.**
+
+### 4. Flowchart: Trainer Lifecycle
+
+```
+            +----------------------------+
+            |    Load pretrained model   |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |  Initialize tokenizer &    |
+            |      TrainingArguments     |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |   Instantiate Trainer &    |
+            |     register callbacks     |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |  Iterate batches: forward, |
+            |   loss, backward, update   |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            | Evaluate & checkpoint per |
+            |      configured strategy   |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |   Reload best weights &    |
+            |   save/push fine-tuned     |
+            |          model             |
+            +----------------------------+
+```
+
+### 5. Cheat Sheet: Training Hyperparameters
+
+| Goal | Argument | Recommended Starting Point |
+|------|----------|-----------------------------|
+| Organize outputs | `output_dir="./runs/exp-01"` | Unique folder per run for easy diffing. |
+| Monitor progress | `evaluation_strategy="epoch"` | Switch to `"steps"` for datasets >100k samples. |
+| Stabilize updates | `per_device_train_batch_size=8` + `gradient_accumulation_steps=4` | Effective batch size of 32 without OOM. |
+| Prevent overfitting | `weight_decay=0.05`, `num_train_epochs=3` | Increase epochs only if validation still improves. |
+| Optimize convergence | `learning_rate=3e-5`, `warmup_ratio=0.1` | Pair with `lr_scheduler_type="linear"`. |
+| Enable mixed precision | `bf16=True` (or `fp16=True`) | Verify GPU support before enabling. |
+| Preserve best model | `load_best_model_at_end=True` + `metric_for_best_model="accuracy"` | Guarantees inference uses top checkpoint. |
+
+**Log every run configuration alongside key metrics so you can trace improvements over time.**
 
 ---
