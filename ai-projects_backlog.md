@@ -150,3 +150,64 @@
 - How can we sandbox third-party API keys or secrets embedded in user prompts?
 - What level of versioning is needed to support iterative shortcut refinements and rollbacks?
 
+## Project: AI Agent Trainer Setup
+
+### Vision
+- Build an orchestration layer of cooperating AI agents that can translate a target training outcome into a full model training and fine-tuning plan.
+- Provide guided recommendations for model families, datasets, and evaluation routines so teams can move from idea to validated model rapidly.
+
+### Strategic Approach
+1. **Outcome Translation**
+   - Implement a requirements parser that converts desired product outcomes into concrete training objectives, metrics, and constraints.
+2. **Model & Dataset Advisory**
+   - Catalog available foundation models and public/private datasets; match them to objectives using capability scoring and licensing checks.
+3. **Training Pipeline Automation**
+   - Generate end-to-end training recipes that include environment setup, hyperparameter schedules, and resource allocation plans.
+4. **Evaluation & Iteration**
+   - Run validation suites against target benchmarks, analyze gaps, and trigger fine-tuning rounds until success criteria are met.
+5. **Governance & Reporting**
+   - Maintain audit logs, reproducibility metadata, and executive summaries for each training engagement.
+
+### Flow Overview
+```
++---------------------------+    +---------------------------+    +-------------------------------+    +------------------------+
+|   Desired Outcome Brief   | -> |   Objective Translation   | -> |   Model & Dataset Selection   | -> |   Training Plan Draft  |
++---------------------------+    +---------------------------+    +-------------------------------+    +------------------------+
+                                                                          |
+                                                                          v
+                                                           +-------------------------------+
+                                                           |   Evaluation & Iteration Loop |
+                                                           +-------------------------------+
+                                                                          |
+                                                                          v
+                                                           +-------------------------------+
+                                                           |   Final Report & Handoff      |
+                                                           +-------------------------------+
+```
+
+### Backlog
+| Priority | Task | Description | Owner | Status |
+| --- | --- | --- | --- | --- |
+| High | Define outcome schema | Specify required inputs (KPIs, constraints, deployment context) for the Trainer intake form. | TBD | Not Started |
+| High | Build model advisory engine | Implement scoring logic that ranks candidate base models with reasoning traces. | TBD | Not Started |
+| High | Automate training recipe generator | Produce reproducible training scripts and infrastructure manifests from selected configurations. | TBD | Not Started |
+| Medium | Integrate dataset discovery | Connect to public catalogs and internal registries to surface compatible datasets with quality tags. | TBD | Not Started |
+| Medium | Implement evaluation harness | Assemble metric dashboards and regression tests aligned with each objective. | TBD | Not Started |
+| Low | Create governance dashboard | Visualize audit logs, approval checkpoints, and reproducibility metadata for stakeholders. | TBD | Not Started |
+| Low | Develop continuous learning loop | Enable agents to incorporate post-deployment feedback into future training recommendations. | TBD | Not Started |
+
+### Milestones
+1. **Training Blueprint Alpha** – Outcome schema, advisory engine, and recipe generator produce a validated dry-run plan.
+2. **Automated Fine-Tuning Beta** – Trainer executes training runs with evaluation harness feedback and iterative adjustments.
+3. **Operational Launch** – Governance dashboard live with reproducibility reports and continuous learning loop activated.
+
+### Risks & Mitigations
+- **Model or data misuse:** Enforce licensing checks and red-team reviews before recommending restricted assets.
+- **Resource overruns:** Introduce budget-aware scheduling and early-stop policies tied to outcome metrics.
+- **Evaluation blind spots:** Maintain a library of domain-specific tests and solicit SME feedback to update coverage.
+
+### Open Questions
+- Which orchestration framework (e.g., LangGraph, CrewAI) best supports multi-agent planning with robust observability?
+- How should the Trainer balance automated decision-making with human approvals for high-impact deployments?
+- What metadata is required to guarantee reproducibility across different infrastructure providers?
+
