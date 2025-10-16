@@ -213,6 +213,11 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [3. Fine-Tuning State Changes and Storage](#3-fine-tuning-state-changes-and-storage)
    - [4. Flowchart: Trainer Lifecycle](#4-flowchart-trainer-lifecycle)
    - [5. Cheat Sheet: Training Hyperparameters](#5-cheat-sheet-training-hyperparameters)
+6. [Advanced Fine-Tuning and Transfer Learning](#advanced-fine-tuning-and-transfer-learning)
+   - [1. Model Weights in Practice](#1-model-weights-in-practice)
+   - [2. Fine-Tuning Task-Specific Layers](#2-fine-tuning-task-specific-layers)
+   - [3. Full vs. Task-Specific Fine-Tuning](#3-full-vs-task-specific-fine-tuning)
+   - [4. Transfer Learning in Action](#4-transfer-learning-in-action)
 
 ---
 
@@ -4070,3 +4075,116 @@ Fine-tuning updates the model's learnable parameters via backpropagation. Each o
 **Log every run configuration alongside key metrics so you can trace improvements over time.**
 
 ---
+
+## Advanced Fine-Tuning and Transfer Learning
+
+### 1. Model Weights in Practice
+
+Model weights are the numerical coefficients a neural network adjusts during training to encode what it has learned about patterns in the data. They scale how much each neuron trusts the signal coming from previous layers, similar to how a mixing console determines how loud each instrument sounds in the final track.
+
+- **Conceptual analogy:** Imagine a language model that converts research papers into summaries. Each attention head owns weight matrices that determine how strongly it pays attention to chemical terms versus everyday vocabulary. Large positive weights amplify focus on chemistry tokens, while small or negative weights downplay irrelevant context.
+- **Cross-link:** See [Model Fine-Tuning Fundamentals](#model-fine-tuning-fundamentals) for the broader workflow that produces and stores these weights.
+
+**Best practice: Always snapshot baseline weights before new experiments so you can restore or compare against the original behavior.**
+
+**Before / after example (scientific summarization):**
+
+| Scenario | Input Snippet | Model Output |
+|----------|---------------|--------------|
+| Before updating weights | "We synthesized a cobalt catalyst that raises ammonia yield by 18%." | "The project reports an improvement without specifying conditions." |
+| After chemistry-focused weight updates | Same as above | "Researchers synthesized a cobalt-based catalyst that boosts ammonia yield by 18%, highlighting the catalyst's efficiency." |
+
+The updated weights sharpened attention on domain terms such as "cobalt" and "ammonia", producing a more precise summary.
+
+### 2. Fine-Tuning Task-Specific Layers
+
+Fine-tuning only the task-specific layers (often the classification or generation head) keeps the frozen backbone as a stable feature extractor while adapting the final decision block to the new task. This approach is especially useful when the downstream dataset is small or when fast iteration is required.
+
+**Flowchart: narrowing updates to the head layers**
+
+```
+            +----------------------------+
+            |    Load pre-trained base   |
+            |  (e.g., "bert-base-uncased") |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |   Freeze encoder weights   |
+            |    (set `requires_grad=0`)  |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |   Replace or initialize    |
+            |    task-specific head      |
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            |  Train head with optimizer |
+            |  (backprop only on new cls)|
+            +----------------------------+
+                           |
+                           v
+            +----------------------------+
+            | Evaluate, save head, and   |
+            | reattach to frozen base    |
+            +----------------------------+
+```
+
+**Implementation checklist:**
+- Freeze backbone parameters via `for param in model.base_model.parameters(): param.requires_grad = False`.
+- Initialize a small learning rate (e.g., `1e-4`) for the head to avoid destabilizing the frozen features.
+- **Log which layers remain trainable so teammates can reproduce the setup.**
+
+**Before / after example (customer intent classifier):**
+
+| Stage | Intent Prediction |
+|-------|-------------------|
+| Before head fine-tuning | Input: "I need to reschedule my delivery." → Output: *General support* |
+| After head fine-tuning on 500 labeled tickets | Same input → Output: *Delivery scheduling* |
+
+The frozen encoder still encodes linguistic nuances, while the fine-tuned head realigns the logits to match the custom intent taxonomy.
+
+### 3. Full vs. Task-Specific Fine-Tuning
+
+Full fine-tuning updates every weight in the network, whereas task-specific (partial) fine-tuning limits updates to select layers. Choosing between them depends on data volume, computational budget, and desired flexibility.
+
+| Aspect | Full Fine-Tuning | Task-Specific Fine-Tuning |
+|--------|------------------|---------------------------|
+| Weight updates | Entire encoder + head | Only selected layers (often the head) |
+| Data requirement | Medium to large datasets to avoid overfitting | Works well with small, high-quality datasets |
+| Compute cost | High (many parameters, more GPU memory) | Low (fewer gradients, faster epochs) |
+| Adaptation capacity | Captures nuanced domain shifts (e.g., scientific tone, new vocabulary) | Focused alignment for label space or output format |
+| Risk profile | Greater risk of catastrophic forgetting if regularization is weak | Lower risk; original capabilities largely preserved |
+
+**Comparison example (legal question answering):**
+
+- **Baseline (no fine-tuning):** Question: "Does the lease permit subletting with landlord approval?" → Answer: "Consult the contract for details." (vague)
+- **After task-specific head tuning:** Same question → Answer: "Select 'Not sure' or escalate to legal." (better taxonomy alignment, still cautious)
+- **After full fine-tuning on annotated legal Q&A pairs:** Same question → Answer: "Yes. Clause 14(b) states subletting is allowed with written landlord consent." (rich, clause-aware response)
+
+**Best practice: Start with task-specific fine-tuning to validate data quality, then escalate to full fine-tuning only when you need deeper linguistic adaptation.**
+
+### 4. Transfer Learning in Action
+
+Transfer learning reuses knowledge from a model trained on one task and adapts it to a different but related task. Unlike pure fine-tuning, it may involve swapping heads, freezing layers, or using zero-/few-shot prompting to benefit from the source task's representations.
+
+- **Core idea:** Large models pre-trained on general corpora (e.g., the summarization backbone above) already understand grammar, syntax, and broad world knowledge. Transfer learning taps into that base to accelerate specialization for a new domain.
+- **Strategy spectrum:** Partial fine-tuning, full fine-tuning, and the inference-time strategies documented in [Zero-shot image classification](#zero-shot-image-classification) and [Multi-agent systems](#13-multi-agent-systems) all sit along the transfer-learning continuum of reuse versus retraining.
+- **Implementation notes:**
+  - Swap task heads to match the new output structure (classification, generation, ranking).
+  - Optionally freeze early encoder blocks to preserve generic feature detectors.
+  - **Document the source dataset and checkpoints so future experiments understand what knowledge is being transferred.**
+
+**Before / after example (sentiment analysis → product review tone):**
+
+| Stage | Input Review | Output |
+|-------|--------------|--------|
+| Source model (pre-trained on movie reviews) | "Battery lasted through a 12-hour shoot." | *Positive* (generic sentiment)
+| After transfer learning with 200 labeled camera reviews | Same input | *Endurance satisfied professional use-case* (task-specific label with rationale) |
+
+The transferred encoder already recognized sentiment words like "lasted" and "12-hour"; the lightweight adaptation aligned outputs with the product team's taxonomy, demonstrating how transfer learning accelerates convergence.
+
+**Cross-link:** Pair this overview with the tactical steps in [Trainer Hyperparameters and Model Persistence](#trainer-hyperparameters-and-model-persistence) when packaging transferred checkpoints for reuse.
