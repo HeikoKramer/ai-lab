@@ -211,3 +211,69 @@
 - How should the Trainer balance automated decision-making with human approvals for high-impact deployments?
 - What metadata is required to guarantee reproducibility across different infrastructure providers?
 
+## Project: Food Storage Management System
+
+### Vision
+- Provide a seamless way to capture new grocery items with minimal friction while maintaining an accurate, searchable household pantry inventory.
+- Surface timely freshness insights so households can plan meals around items nearing expiration and reduce food waste.
+
+### Strategic Approach
+1. **Capture Interfaces**
+   - Build mobile and Pi-camera capture flows that support barcode scans, object recognition, and manual overrides.
+   - Add quick prompts for quantity, unit, and optional "opened" status when automation confidence is low.
+2. **Recognition & Metadata Extraction**
+   - Combine barcode lookup services with computer vision classification to identify items and map them to a product catalog.
+   - Extract or prompt for expiration dates, packaging sizes, and storage categories; store unit conversions for consistent inventory math.
+3. **Inventory Management Core**
+   - Maintain a normalized item database with quantity tracking, opened/closed state, and consumption history.
+   - Implement search, filtering, and criticality scoring rules that weigh product type, freshness, and spoilage risk.
+4. **Insights & Notifications**
+   - Build dashboards for expiring or expired items, grouped by criticality with suggested actions.
+   - Offer notification channels (mobile push, email, or smart display cards) configurable by urgency thresholds.
+5. **Consumption & Deletion Flows**
+   - Support manual checkout, capture of empty packaging, or automated deduction from smart appliance signals.
+   - Provide auditing tools to reconcile discrepancies and adjust quantities quickly.
+
+### Flow Overview
+```
++-------------------+    +-------------------------+    +-----------------------+    +---------------------------+
+|   Item Capture    | -> |   Recognition & Lookup  | -> |   Inventory Update    | -> |   Alerts & Dashboards     |
++-------------------+    +-------------------------+    +-----------------------+    +---------------------------+
+                              |                                       ^                       |
+                              v                                       |                       v
+                      +--------------------+                          |               +-----------------+
+                      | Manual Overrides   | -------------------------+--------------- | Consumption Log |
+                      +--------------------+                                          +-----------------+
+```
+
+### Backlog
+| Priority | Task | Description | Owner | Status |
+| --- | --- | --- | --- | --- |
+| High | Define product catalog schema | Model item attributes (name, categories, shelf life factors, units) and barcode links. | TBD | Not Started |
+| High | Prototype capture pipeline | Implement mobile and Pi-camera capture with barcode scanning and fallback photo uploads. | TBD | Not Started |
+| High | Build expiration extraction service | Parse OCR results, packaging text, and user prompts to record best-before dates accurately. | TBD | Not Started |
+| Medium | Develop criticality scoring engine | Weight item types by spoilage risk and elapsed time past expiry for dashboard sorting. | TBD | Not Started |
+| Medium | Implement searchable inventory UI | Deliver filters by storage location, category, and opened status with responsive search. | TBD | Not Started |
+| Medium | Add consumption workflows | Support manual checkout, empty-package recognition, and quantity adjustments with audit logs. | TBD | Not Started |
+| Low | Integrate smart appliance hooks | Explore signals from connected fridges or scales to automate inventory updates. | TBD | Not Started |
+| Low | Design notification preferences | Configure cadence, channels, and urgency thresholds for freshness alerts. | TBD | Not Started |
+
+### Milestones
+1. **Capture & Recognition Alpha** – End-to-end flow from photo or barcode scan to catalog match with manual override safety.
+2. **Inventory Intelligence Beta** – Criticality scoring, expiring dashboard, and search UI running with real household data.
+3. **Household Launch** – Notification preferences, consumption logging, and reconciliation tooling validated in daily use.
+
+### Risks & Mitigations
+- **Recognition inaccuracies:** Maintain human-in-the-loop overrides and confidence thresholds before committing inventory updates.
+- **Data privacy concerns:** Store captures locally or encrypt cloud storage; provide deletion and export tools for household members.
+- **User adoption friction:** Offer rapid entry shortcuts, reusable shopping lists, and optional voice commands to minimize manual typing.
+
+### Open Questions
+- Which regional barcode databases or grocery APIs offer the best coverage for local products?
+- How should criticality scoring adapt to user-defined freshness tolerances or dietary restrictions?
+- What signals (e.g., opened packaging photos, smart sensor data) are reliable enough for automated consumption logging?
+
+### Future Expansion
+- Dedicated recipe recommendation service that leverages current inventory, soon-to-expire items, household taste profiles, and available kitchen appliances.
+- Integration hooks for spice tracking, utensil availability, and personalized meal-planning workflows as a follow-on project.
+
