@@ -277,3 +277,66 @@
 - Dedicated recipe recommendation service that leverages current inventory, soon-to-expire items, household taste profiles, and available kitchen appliances.
 - Integration hooks for spice tracking, utensil availability, and personalized meal-planning workflows as a follow-on project.
 
+## Project: Codex CLI Autonomous Agent
+
+### Vision
+- Launch an autonomous development loop where a supervising agent orchestrates Codex CLI workers through every roadmap phase without manual prompting.
+- Guarantee that generated code is validated and version-controlled so each completed work package unlocks the next stage confidently.
+
+### Strategic Approach
+1. **Supervising Orchestrator**
+   - Parse the project roadmap, plan work packages, and assign them to Codex CLI workers with clear acceptance criteria.
+   - Track execution status, trigger evaluations, and decide when to advance to the next phase.
+2. **Codex CLI Worker Agent**
+   - Translate work-package briefs into Codex CLI commands, manage local workspace context, and hand back diffs plus logs.
+   - Commit validated outputs and request guidance whenever acceptance conditions are unmet.
+3. **Evaluation & Feedback Loop**
+   - Run automated tests, linting, and static checks to grade each Codex deliverable.
+   - Feed test outcomes to the orchestrator for remediation or approval decisions.
+4. **Roadmap & Status Management**
+   - Maintain a structured roadmap definition, execution history, and audit logs for traceable progress reporting.
+
+### Architecture Overview
+```
++-----------------------------+      +-----------------------------+      +-----------------------------+
+|       Roadmap Registry      | ---> |       Supervising Agent     | ---> |        Evaluation Harness   |
++-----------------------------+      +-------------+---------------+      +-----------------------------+
+                                     ^             |
+                                     |             | Dispatch
+                                     |             v
+                           +-------------------------------+
+                           |        Codex CLI Worker       |
+                           +-------------------------------+
+                                     |
+                                     v
+                           +-------------------------------+
+                           |      Repository & Reports     |
+                           +-------------------------------+
+```
+
+### Backlog
+| Priority | Task | Description | Owner | Status |
+| --- | --- | --- | --- | --- |
+| High | Define system requirements | Consolidate objectives, agent responsibilities, and hand-off rules into a baseline spec. | TBD | Not Started |
+| High | Model roadmap schema | Choose a machine-readable roadmap format and build parser utilities for work-package retrieval. | TBD | Not Started |
+| High | Implement supervising orchestrator | Develop planning, dispatch, and monitoring logic with hooks for external oversight models. | TBD | Not Started |
+| High | Build Codex CLI worker wrapper | Encapsulate Codex CLI execution, workspace preparation, and result collation. | TBD | Not Started |
+| Medium | Establish evaluation pipeline | Automate unit tests, linting, and result grading with standardized feedback channels. | TBD | Not Started |
+| Medium | Add status persistence & reporting | Store execution history and surface progress dashboards or summaries. | TBD | Not Started |
+| Low | Prototype operator controls | Create pause/resume and override interfaces for human supervisors. | TBD | Not Started |
+
+### Milestones
+1. **Orchestrator Foundations** – Roadmap parser, supervising agent skeleton, and Codex worker integration validated on sample tasks.
+2. **Autonomous Delivery Loop** – Evaluation harness gating work-package promotion with automated remediation triggers.
+3. **Operational Readiness** – Reporting, operator controls, and audit logs supporting continuous multi-phase delivery.
+
+### Risks & Mitigations
+- **Unreliable test coverage:** Invest in comprehensive automated checks before promoting work packages; add manual gates for high-impact phases.
+- **Context drift between agents:** Normalize workspace state and share explicit briefs to keep Codex outputs aligned with roadmap intent.
+- **API or rate limitations:** Cache prompts, batch executions where possible, and fall back to queued retries when Codex CLI is throttled.
+
+### Open Questions
+- Which supervising model or framework offers the best balance of planning depth and operational cost?
+- How should the system prioritize between retrying failed work packages and escalating them for human review?
+- What telemetry is required to audit Codex CLI interactions for compliance and reproducibility?
+
