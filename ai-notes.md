@@ -118,6 +118,15 @@ This document summarizes the key concepts and steps taken to set up a local AI d
      - [4. MoviePy cheat sheet](#4-moviepy-cheat-sheet)
      - [5. Frame-by-frame prediction walkthrough](#5-frame-by-frame-prediction-walkthrough)
      - [6. Model landscape playbook](#6-model-landscape-playbook-1)
+3. [Model Evaluation with the Hugging Face `evaluate` Library](#model-evaluation-with-the-hugging-face-evaluate-library)
+   - [1. Library overview](#1-library-overview)
+   - [2. Installing and loading metrics](#2-installing-and-loading-metrics)
+   - [3. Working with metric features](#3-working-with-metric-features)
+   - [4. Example: evaluating a text classification pipeline](#4-example-evaluating-a-text-classification-pipeline)
+   - [5. Understanding core metrics](#5-understanding-core-metrics)
+   - [6. Choosing and combining metrics](#6-choosing-and-combining-metrics)
+   - [7. Interpreting metric outputs](#7-interpreting-metric-outputs)
+   - [8. Best practices checklist](#8-best-practices-checklist)
    - [Visual question-answering (VQA)](#visual-question-answering-vqa)
      - [1. Task overview](#1-task-overview)
      - [2. Minimal pipeline walkthrough](#2-minimal-pipeline-walkthrough)
@@ -4188,3 +4197,159 @@ Transfer learning reuses knowledge from a model trained on one task and adapts i
 The transferred encoder already recognized sentiment words like "lasted" and "12-hour"; the lightweight adaptation aligned outputs with the product team's taxonomy, demonstrating how transfer learning accelerates convergence.
 
 **Cross-link:** Pair this overview with the tactical steps in [Trainer Hyperparameters and Model Persistence](#trainer-hyperparameters-and-model-persistence) when packaging transferred checkpoints for reuse.
+
+## Model Evaluation with the Hugging Face `evaluate` Library
+
+The `evaluate` library converts model predictions into decision-ready metrics. It complements the broader evaluation advice under [Pipeline tasks and evaluations](#pipeline-tasks-and-evaluations) by providing reusable metric implementations that work across tasks and modalities.
+
+### 1. Library overview
+
+- **Purpose:** Load community-maintained metrics (accuracy, F1, BLEU, ROUGE, etc.) or custom logic, then compute them locally or on distributed backends without rewriting evaluation code.
+- **Key capabilities:**
+  - Metric registry mirrors Hugging Face Hub taxonomy (text classification, generation, speech, computer vision).
+  - Consistent API (`evaluate.load`, `.compute`, `.add_batch`, `.compute`) regardless of metric complexity.
+  - Built-in dataset feature validation, so mismatched shapes or label types are caught early.
+- **Supported use cases:** spot-checking a prototype, continuous evaluation during fine-tuning, or large-scale batch scoring after deployment.
+
+### 2. Installing and loading metrics
+
+```bash
+pip install evaluate datasets
+```
+
+```python
+import evaluate
+
+accuracy = evaluate.load("accuracy")
+f1 = evaluate.load("f1")
+print(accuracy.description)
+```
+
+**Cheat sheet – essential helpers**
+
+| Function | What it does | When to reach for it |
+|----------|---------------|-----------------------|
+| `evaluate.load(name_or_path)` | Downloads and initializes a metric by name or Hub path. | Start any evaluation script. |
+| `metric.compute(predictions=..., references=...)` | Returns metric values for small batches passed in one call. | Quick experiments, unit tests. |
+| `metric.add_batch(predictions=..., references=...)` | Queues partial results across streaming batches. | Large datasets or distributed loops. |
+| `metric.compute()` *(after `add_batch`)* | Aggregates all queued batches into final scores. | End of an epoch or inference job. |
+| `metric.features` | Exposes required input columns and value types. | Validating pipeline outputs against metric expectations. |
+| `evaluate.list_metrics()` | Lists available metrics and task tags. | Discover alternatives (e.g., `roc_auc`, `wer`). |
+
+**Bold rule:** Always pin metric versions (e.g., `evaluate.load("accuracy", revision="1.0.1")`) when reproducibility matters.
+
+### 3. Working with metric features
+
+```python
+accuracy = evaluate.load("accuracy")
+print(accuracy.features)
+
+f1 = evaluate.load("f1")
+print(f1.features)
+```
+
+- `predictions`: Model outputs, typically integer labels or probability lists.
+- `references`: Ground-truth labels, same shape and dtype as predictions.
+- `features`: Schema object listing value types (`Value(dtype='int32')`, `Sequence(Value('float32'))`, etc.). Use it to enforce typing when exporting predictions to disk.
+- Metrics that need extra inputs (confidence scores, attention weights) also surface them in `features`, preventing silent failures at compute time.
+
+### 4. Example: evaluating a text classification pipeline
+
+```python
+from transformers import pipeline
+import evaluate
+
+classifier = pipeline("text-classification", model="distilbert-base-uncased-finetuned-sst-2-english")
+texts = [
+    "The support team resolved everything instantly.",
+    "Response times were disappointing and slow.",
+    "It was fine, nothing special."  # neutral label absent in binary SST-2
+]
+
+raw_outputs = classifier(texts, top_k=1)
+predicted_labels = [1 if output["label"] == "POSITIVE" else 0 for output in raw_outputs]
+ground_truth = [1, 0, 0]
+
+metrics = {
+    name: evaluate.load(name)
+    for name in ["accuracy", "precision", "recall", "f1"]
+}
+
+scores = {
+    name: metric.compute(predictions=predicted_labels, references=ground_truth)[name]
+    for name, metric in metrics.items()
+}
+
+print(scores)
+```
+
+This example highlights how neutral ground-truth labels mapped to the closest available class affect recall; supplement the dataset if mislabel alignment becomes frequent.
+
+**Flowchart – evaluation loop (streaming batches)**
+
+```
++-------------+ --> +-------------------+ --> +-----------------+ --> +--------------------+
+|  Load metric|     | add_batch(preds)  |     | add_batch(refs) |     | compute() returns  |
+|  via load() |     | for each mini-batch|    | for same batch  |     | aggregated metrics |
++-------------+ --> +-------------------+ --> +-----------------+ --> +--------------------+
+```
+
+### 5. Understanding core metrics
+
+| Metric | Formula | Interpretation |
+|--------|---------|----------------|
+| Accuracy | `(TP + TN) / (TP + TN + FP + FN)` | Fraction of total predictions the model got right. Sensitive to class imbalance. |
+| Precision | `TP / (TP + FP)` | Among predicted positives, how many were correct. High precision reduces false alarms. |
+| Recall | `TP / (TP + FN)` | Among actual positives, how many were recovered. High recall reduces misses. |
+| F1 score | `2 * (Precision * Recall) / (Precision + Recall)` | Harmonic mean of precision and recall; punishes extreme imbalance between them. |
+
+**Key takeaway:** F1 shines when positive classes are rare or when false positives and false negatives carry similar costs.
+
+For generative tasks, switch to metrics aligned with human judgments:
+
+- Summarization → `rouge1`, `rougeL`, `bertscore`.
+- Translation → `bleu`, `chrf`, `comet`.
+- Question answering → `exact_match`, `f1` over token spans.
+- Dialogue safety → pair accuracy metrics with toxicity classifiers for holistic coverage.
+
+### 6. Choosing and combining metrics
+
+Metric selection blends task goals, stakeholder priorities, and dataset traits. The process below keeps those factors aligned.
+
+```
++------------------+ --> +--------------------------+ --> +------------------------------+ --> +------------------------+
+| Define objective |     | Inspect label distribution|     | Map risks (FP vs. FN cost)  |     | Select primary metric |
+| (e.g., reduce    |     | & dataset biases          |     | and supporting diagnostics   |     | + supporting metrics  |
+| false alarms)    |     |                          |     |                              |     | (e.g., ROC curve)     |
++------------------+ --> +--------------------------+ --> +------------------------------+ --> +------------------------+
+```
+
+- Start with domain KPIs (customer churn, moderation precision) and map them to statistical metrics.
+- Use `evaluate.list_metrics()` to uncover specialized options (e.g., `mean_iou` for segmentation, `wer` for speech).
+- Blend global metrics (accuracy) with per-class or span-level diagnostics to expose failure modes.
+- **Bold rule:** Always validate chosen metrics against a slice of hand-reviewed predictions before automating dashboards.
+- Cross-reference the heuristics in [Evaluating pipeline performance](#3-evaluating-pipeline-performance) for broader workflow guidance.
+
+### 7. Interpreting metric outputs
+
+- Inspect raw dictionaries returned by `metric.compute`:
+
+  ```python
+  {'accuracy': 0.8, 'precision': 1.0, 'recall': 0.6667, 'f1': 0.8}
+  ```
+
+- Compare against baselines: random chance, rule-based systems, or previous checkpoints.
+- Graph trends across epochs; plateauing F1 with rising accuracy usually signals class imbalance creeping in.
+- For multi-metric reports, annotate dashboards with thresholds (e.g., **Minimum acceptable recall = 0.85**) so teams interpret numbers consistently.
+- When metrics exceed 0.99, re-check labels or data leakage—perfect scores are rare without synthetic test sets.
+
+### 8. Best practices checklist
+
+- Cache metrics locally (`HF_EVALUATE_OFFLINE=1`) to avoid repeated downloads during CI.
+- Log metric inputs alongside outputs so audits can reproduce results later.
+- Pair automatic metrics with qualitative review—especially for summarization or dialogue—before shipping major updates.
+- **Bold rule:** Document metric definitions, formulas, and threshold rationales inside your project README to keep stakeholders aligned.
+- Rotate metrics as the product evolves; onboarding a new intent label may require switching from binary F1 to macro-averaged F1.
+- Combine the `evaluate` outputs with experiment tracking tools (Weights & Biases, MLflow) for historical comparisons.
+
+More end-to-end evaluation walk-throughs live in the [Pipeline tasks and evaluations](#pipeline-tasks-and-evaluations) chapter.
