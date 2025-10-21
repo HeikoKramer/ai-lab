@@ -127,6 +127,7 @@ This document summarizes the key concepts and steps taken to set up a local AI d
    - [6. Choosing and combining metrics](#6-choosing-and-combining-metrics)
    - [7. Interpreting metric outputs](#7-interpreting-metric-outputs)
    - [8. Best practices checklist](#8-best-practices-checklist)
+   - [9. Metrics for language tasks: perplexity and BLEU](#9-metrics-for-language-tasks-perplexity-and-bleu)
    - [Visual question-answering (VQA)](#visual-question-answering-vqa)
      - [1. Task overview](#1-task-overview)
      - [2. Minimal pipeline walkthrough](#2-minimal-pipeline-walkthrough)
@@ -4353,3 +4354,105 @@ Metric selection blends task goals, stakeholder priorities, and dataset traits. 
 - Combine the `evaluate` outputs with experiment tracking tools (Weights & Biases, MLflow) for historical comparisons.
 
 More end-to-end evaluation walk-throughs live in the [Pipeline tasks and evaluations](#pipeline-tasks-and-evaluations) chapter.
+
+### 9. Metrics for language tasks: perplexity and BLEU
+
+**Cheat sheet overview**
+
+| Metric | Measures | Output range | Interpretation anchor |
+|--------|----------|--------------|------------------------|
+| Perplexity | Average uncertainty when predicting the next token | `[1, ∞)` | `1` means perfect certainty; every doubling indicates twice the confusion. |
+| BLEU | n-gram overlap between generated and reference text (penalizes brevity) | `[0, 1]` | `0` → no overlap, `1` → perfect match. |
+
+**Cross-link:** Revisit [Understanding core metrics](#5-understanding-core-metrics) for accuracy/recall definitions that complement these generation-focused scores.
+
+#### Perplexity in depth
+
+- **Formula:** `Perplexity = exp(- (1/N) * Σ log p(w_i | w_{<i}))`, the exponential of the mean negative log-likelihood across tokens.
+- **Why it matters:** Lower perplexity signals the model assigns higher probability to the observed sequence—crucial for language modeling and next-token prediction.
+- **Reading the scale:**
+  - `Perplexity = 1` → the model predicted every token with certainty.
+  - `Perplexity = 20` → on average the model behaves as if 20 equiprobable tokens were plausible at each step.
+  - `Perplexity = 200` → roughly ten times more uncertainty than the 20-score model, often symptomatic of domain shift.
+
+```python
+import math
+import evaluate
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("sshleifer/tiny-gpt2")
+model = AutoModelForCausalLM.from_pretrained("sshleifer/tiny-gpt2")
+text = "Latest research findings in Antarctica show that the ice sheet is melting faster than previously expected."
+
+inputs = tokenizer(text, return_tensors="pt")
+labels = inputs.input_ids
+loss = model(**inputs, labels=labels).loss
+perplexity = math.exp(loss)
+
+print({"loss": float(loss), "perplexity": perplexity})
+```
+
+**Sample output:** `{'loss': 5.5, 'perplexity': 244.6}`
+
+- `loss` is the average negative log-likelihood; exponentiating yields perplexity. Here the model acted as if ~245 equally likely next tokens existed—high uncertainty for a news-style sentence.
+- **Interpretation tip:** Track perplexity relative to a baseline (e.g., pre-training checkpoint). A drop from `240 → 60` after domain fine-tuning means the model is four times more confident on in-domain text.
+
+**Manual miniature example**
+
+```text
+Tokens: ["the", "cat", "sleeps"]
+Model probabilities: p(cat|the)=0.25, p(sleeps|the cat)=0.5, p(<eos>|the cat sleeps)=0.8
+Perplexity = exp(- (log 0.25 + log 0.5 + log 0.8) / 3) ≈ 1.7
+```
+
+- Because the model assigns reasonably high probability to each continuation, perplexity stays close to 1—confirming confident predictions.
+- **Bold rule:** Always compare perplexity across the *same tokenizer vocabulary*; switching tokenization changes sequence length and invalidates trends.
+
+#### BLEU in depth
+
+- **Formula sketch:** BLEU combines clipped n-gram precision (`p_n` for n=1…4) with a brevity penalty (BP) to prevent short guesses from scoring high: `BLEU = BP * exp(Σ w_n log p_n)`.
+- **Default weights:** Equal weights (`w_n = 0.25`) for n-grams from 1 to 4 unless configured otherwise.
+- **Brevity penalty:** `BP = 1` when the candidate is longer than the reference. When shorter, `BP = exp(1 - reference_length / candidate_length)`, reducing the score.
+
+```python
+import evaluate
+
+bleu = evaluate.load("bleu")
+generated = ["scientists report antarctic ice loss accelerates compared to last decade"]
+reference = [["antarctic scientists report that the ice loss is accelerating compared with the previous decade"]]
+
+result = bleu.compute(predictions=generated, references=reference)
+print(result)
+```
+
+**Sample output:** `{'bleu': 0.47, 'precisions': [0.75, 0.5, 0.33, 0.25], 'brevity_penalty': 0.92, 'length_ratio': 0.94, 'translation_length': 15, 'reference_length': 16}`
+
+- `bleu`: Overall similarity; `0.47` suggests moderate overlap—acceptable for draft translations but below professional quality thresholds (typically ≥0.6 for high fidelity).
+- `precisions`: Successively stricter n-gram matches; dropping values highlight where phrasing diverges (e.g., few 4-gram matches).
+- `brevity_penalty`: Less than `1` indicates the hypothesis is shorter than the reference; multiplying by BP explains why BLEU is below the geometric mean of precisions.
+- `length_ratio`: Hypothesis length divided by reference length. Values <1 warn that content may be missing.
+
+**Flowchart – interpreting BLEU diagnostics**
+
+```
++----------------+     +------------------------+     +-----------------------------+
+| Check `bleu`   | --> | Inspect `precisions`   | --> | Compare `length_ratio` & BP |
+| (0-1 scale)    |     | (1-gram ... 4-gram)    |     | (missing or verbose output?)|
++----------------+     +------------------------+     +-----------------------------+
+```
+
+- Use the precisions to pinpoint whether mismatches stem from vocabulary (1-grams) or phrasing (higher n-grams).
+- **Bold rule:** Benchmark BLEU against human references from the same domain; cross-domain references distort the score and understate translation quality.
+
+**Practical comparison scenario**
+
+| Model | BLEU | Interpretation |
+|-------|------|----------------|
+| Baseline NMT | 0.32 | Significant rewrites needed—few higher-order n-gram matches. |
+| Fine-tuned NMT | 0.55 | Fluency improvements; adequate for internal QA. |
+| Human reference | 1.00 | Perfect match, serves as the ceiling. |
+
+- Pair BLEU with qualitative review: inspect samples with low BLEU (<0.3) to uncover systematic terminology issues.
+- Complement BLEU with newer metrics such as `chrf` or `comet` when sensitivity to synonyms or fluency is critical.
+
+**Monitoring tip:** Plot perplexity and BLEU per checkpoint during training. Diverging trends (falling perplexity but flat BLEU) often indicate the model is overfitting to token likelihoods without improving real-world text quality.
