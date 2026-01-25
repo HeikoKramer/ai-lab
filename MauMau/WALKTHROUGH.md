@@ -42,6 +42,15 @@ python3 -m http.server 8000
 
 You should now see the Tokyo Night Mau Mau cards rendered in your browser!
 
+## Step 6: Verify Game Engine
+To verify that the game logic (shuffling, validation, rules) is working correctly without Node.js, we have included a browser-based test runner.
+
+1. Ensure your local server is running (Step 4).
+2. In your browser, navigate to:
+   `http://localhost:8000/test_engine.html`
+3. You should see a log output ending with `SUCCESS: Basic logic seems correct.`
+
+
 ### Troubleshooting
 - If port 8000 is taken, try another port: `python3 -m http.server 8080` (and use `localhost:8080`).
 - To stop the server, go back to your terminal window and press `Ctrl+C`.

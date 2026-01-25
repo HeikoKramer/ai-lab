@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Mau Mau Engine Test</title>
+</head>
+
+<body>
+    <h1>Engine Test Log</h1>
+    <pre id="log">Running tests...</pre>
+    <script type="module">
+        import { MauMauEngine } from './src/logic/engine.js';
+
+        const start = Date.now();
+        const logEl = document.getElementById('log');
+        let output = "";
+        const log = (msg) => {
+            output += msg + "\n";
+            logEl.textContent = output;
+            console.log(msg);
+        };
+
+        try {
+            const game = new MauMauEngine();
+            game.initGame();
+
+            log("=== Mau Mau Engine Test ===");
+            log(`Deck size: ${game.deck.length}`);
+
+            // Validation Test
+            const top = game.getGameState().topCard;
+            const validSameSuit = { suit: top.suit, value: top.value === '7' ? '8' : '7' };
+            // Ensure validSameSuit is actually different value
+
+            const isValid = game.isValidMove(validSameSuit);
+            log(`Check Standard Move: ${isValid}`);
+
+            if (isValid === true && game.deck.length > 0) {
+                log("SUCCESS: Basic logic seems correct.");
+            } else {
+                log("FAILURE: logic check failed.");
+            }
+
+        } catch (e) {
+            log(`ERROR: ${e.message}`);
+        }
+    </script>
+</body>
+
+</html>
