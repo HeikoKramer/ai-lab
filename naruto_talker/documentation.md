@@ -8,8 +8,8 @@ The pipeline consists of four main stages:
 
 ```mermaid
 graph TD
-    A[User Input] -->|Prompts & Text| B[Text-to-Image (T2I)]
-    A -->|Text| C[Text-to-Speech (TTS)]
+    A[User Input] -->|"Prompts & Text"| B["Text-to-Image (T2I)"]
+    A -->|Text| C["Text-to-Speech (TTS)"]
     B -->|Portrait Image| D[Lip-Syncing]
     C -->|Audio| D
     D -->|Raw Video| E[Face Restoration]

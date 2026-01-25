@@ -11,7 +11,7 @@ graph LR
     B --> C[Qwen2-Audio Model]
     C --> D[Audio Latents]
     D --> E[Vocoder/Decoder]
-    E --> F[Audio Output (.wav)]
+    E --> F["Audio Output (.wav)"]
 ```
 
 ### Model Specification
