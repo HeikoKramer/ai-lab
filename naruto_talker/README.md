@@ -19,12 +19,12 @@ Here are sample results from the pipeline (Run ID: 1769280970).
 ![Generated Portrait](outputs/run_1769280970/portrait_attempt_1.png)
 
 ### Final Video
-https://github.com/user-attachments/assets/PLACEHOLDER_FOR_VIDEO_LINK
-*(Note: Video embedding depends on hosting. The file is located at `outputs/run_1769280970/final_restored.mp4`)*
+[![Watch the video](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/portrait_attempt_1.png)](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/final_restored.mp4)
+
 
 ### Silent Animation
-https://github.com/user-attachments/assets/PLACEHOLDER_FOR_SILENT_LINK
-*(Located at `outputs/run_1769280970/silent.mp4`)*
+[![Watch the silent video](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/portrait_attempt_1.png)](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/silent.mp4)
+
 
 ## Requirements
 - Python 3.10+
