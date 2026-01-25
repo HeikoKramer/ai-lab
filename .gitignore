@@ -10,4 +10,13 @@ Thumbs.db
 # Optional logs
 *.log
 
+# Project specific ignores
+naruto_talker/debug_outputs/
+debug_outputs/
 outputs/
+results/
+venv/
+naruto_talker/gfpgan/weights/*.pth
+*.pth
+
+
