@@ -19,4 +19,8 @@ venv/
 naruto_talker/gfpgan/weights/*.pth
 *.pth
 
+# Documentation Examples (Whitelist)
+!naruto_talker/outputs/run_1769280970/
+
+
 
