@@ -18,11 +18,13 @@ Here are sample results from the pipeline (Run ID: 1769280970).
 ### Generated Portrait
 ![Generated Portrait](outputs/run_1769280970/portrait_attempt_1.png)
 
-### Final Video
+### Final Video (Click to download/watch)
+
 [![Watch the video](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/portrait_attempt_1.png)](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/final_restored.mp4)
 
 
-### Silent Animation
+### Silent Animation (Click to download/watch)
+
 [![Watch the silent video](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/portrait_attempt_1.png)](https://raw.githubusercontent.com/HeikoKramer/ai-lab/main/naruto_talker/outputs/run_1769280970/silent.mp4)
 
 
