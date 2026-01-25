@@ -11,6 +11,8 @@ This repository captures experiments, documentation, and planning artifacts for 
 ## Projects
 - **[Naruto Talker](naruto_talker/README.md)**: An AI pipeline that generates an animated character portrait speaking from a text script. Features SDXL, Qwen-TTS, MuseTalk, and GFPGAN.
 - **[Qwen3 TTS Demo](qwen3_tts_demo/README.md)**: A demo interface for the Qwen2-Audio/Qwen-TTS model, focusing on high-quality text-to-speech with voice design capabilities.
+- **[Tokyo Night Mau Mau](MauMau/index.html)**: A web-based card game with a dark/hacker aesthetic. [Setup Guide](MauMau/WALKTHROUGH.md).
+
 
 
 ## Future Structure
