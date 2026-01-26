@@ -50,6 +50,15 @@ To verify that the game logic (shuffling, validation, rules) is working correctl
    `http://localhost:8000/test_engine.html`
 3. You should see a log output ending with `SUCCESS: Basic logic seems correct.`
 
+## Step 7: How to Play (Demo)
+1. **Goal**: Be the first to empty your hand.
+2. **Controls**:
+   - **Play**: Click a card in your hand (bottom) that matches the top card's Suit or Value.
+   - **Draw**: Click the "DRAW DECK" placeholder if you cannot play.
+   - **Jack (Bube)**: If you play a Jack, you will be prompted to enter a desired suit (Pik, Kreuz, Herz, Karo).
+3. **AI**: The AI plays immediately after you. Watch the "Game Log" for its moves (including "Jack Wishes").
+
+
 
 ### Troubleshooting
 - If port 8000 is taken, try another port: `python3 -m http.server 8080` (and use `localhost:8080`).

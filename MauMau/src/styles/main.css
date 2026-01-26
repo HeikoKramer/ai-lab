@@ -1,0 +1,309 @@
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap');
+
+body {
+    background-color: #1a1b26;
+    color: #787c99;
+    font-family: 'Ubuntu Mono', monospace;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+}
+
+/* --- Layout --- */
+#cyberdeck {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+#game-board {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 20px;
+    background: radial-gradient(circle at center, #1f2335 0%, #1a1b26 100%);
+    position: relative;
+}
+
+#side-panel {
+    width: 350px;
+    min-width: 300px;
+    background: #16161e;
+    border-left: 2px solid #7dcfff;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+    z-index: 10;
+}
+
+/* --- Side Panel Elements --- */
+.panel-header {
+    color: #7dcfff;
+    font-weight: bold;
+    border-bottom: 1px solid #565f89;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 5px rgba(125, 207, 255, 0.4);
+    margin-top: 20px;
+}
+
+.panel-header:first-child {
+    margin-top: 0;
+}
+
+#status-bar {
+    color: #c0caf5;
+    font-size: 1.1em;
+    min-height: 40px;
+    margin-bottom: 10px;
+}
+
+#game-log {
+    flex-grow: 1;
+    overflow-y: hidden;
+    /* Auto scroll handled by flex/prepend? keeping hidden for clean look */
+    border: 1px solid #565f89;
+    background: #1a1b26;
+    padding: 10px;
+    font-size: 0.85em;
+    display: flex;
+    flex-direction: column;
+    max-height: 40vh;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+#wish-panel {
+    height: 200px;
+    border: 1px dashed #565f89;
+    background: #1a1b26;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+}
+
+.wish-placeholder {
+    color: #565f89;
+    font-style: italic;
+    animation: blink 2s infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0.3;
+    }
+}
+
+/* --- Game Areas --- */
+.hand-area {
+    height: 220px;
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+    transition: all 0.3s;
+}
+
+#player-hand:hover {
+    margin-bottom: 10px;
+}
+
+#table-area {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 60px;
+}
+
+/* --- Components --- */
+svg {
+    display: block;
+    border-radius: 10px;
+}
+
+.card-container {
+    margin-left: -50px;
+    transition: transform 0.2s, margin 0.2s;
+    filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
+}
+
+.hand-area>.card-container:first-child {
+    margin-left: 0;
+}
+
+#player-hand>.card-container:hover {
+    transform: translateY(-30px) scale(1.1);
+    z-index: 100;
+}
+
+.deck-placeholder {
+    width: 150px;
+    height: 220px;
+    border: 2px dashed #565f89;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #565f89;
+    cursor: pointer;
+}
+
+.deck-placeholder:hover {
+    border-color: #7dcfff;
+    color: #7dcfff;
+}
+
+/* Mau Button (Cyberdeck Style) */
+#mau-btn {
+    width: 80px;
+    height: 50px;
+    background: #1a1b26;
+    border: 2px solid #7dcfff;
+    color: #7dcfff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-size: 1.2em;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 #000;
+    transition: all 0.1s;
+}
+
+#mau-btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 #000;
+    background: #24283b;
+}
+
+#mau-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #000;
+}
+
+#mau-btn.active {
+    background: #f7768e;
+    color: #1a1b26;
+    border-color: #f7768e;
+}
+
+/* Wish Buttons (Control Panel Style) */
+.suit-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+}
+
+.suit-btn {
+    background: #24283b;
+    border: 1px solid #7dcfff;
+    color: #7dcfff;
+    height: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.suit-btn:hover {
+    background: #7dcfff;
+    color: #1a1b26;
+    box-shadow: 0 0 15px rgba(125, 207, 255, 0.4);
+}
+
+.suit-btn[data-suit="Herz"],
+.suit-btn[data-suit="Karo"] {
+    border-color: #f7768e;
+    color: #f7768e;
+}
+
+.suit-btn[data-suit="Herz"]:hover,
+.suit-btn[data-suit="Karo"]:hover {
+    background: #f7768e;
+    color: #1a1b26;
+}
+
+
+/* --- Log Highlights --- */
+.log-entry {
+    margin-bottom: 2px;
+}
+
+.log-human {
+    color: #787c99;
+    font-weight: bold;
+}
+
+.log-seven {
+    color: #f7768e;
+}
+
+.log-draw {
+    color: #ff9e64;
+    font-weight: bold;
+}
+
+.log-skip {
+    color: #e0af68;
+}
+
+.text-Herz,
+.text-Karo {
+    color: #f7768e;
+    font-weight: bold;
+}
+
+.text-Pik,
+.text-Kreuz {
+    color: #7dcfff;
+    font-weight: bold;
+}
+
+/* --- Overlays --- */
+#modal-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.terminator-overlay {
+    background: #000;
+    color: #ff0000;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 3em;
+    font-weight: bold;
+    pointer-events: auto;
+}
+
+.modal-activator {
+    background: rgba(26, 27, 38, 0.95);
+    border: 2px solid #9ece6a;
+    padding: 40px;
+    text-align: center;
+    pointer-events: auto;
+    box-shadow: 0 0 50px rgba(158, 206, 106, 0.2);
+}
+
+.modal-title {
+    font-size: 2em;
+    margin-bottom: 20px;
+}

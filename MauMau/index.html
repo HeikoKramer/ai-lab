@@ -1,160 +1,47 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
     <meta charset="UTF-8">
     <title>Tokyo Night Mau Mau - Hacker Deck</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap');
-        
-        body { 
-            background-color: #1a1b26; 
-            color: #787c99; 
-            font-family: 'Ubuntu Mono', monospace;
-            display: flex;
-            flex-direction: column; /* Changed to column to stack rows */
-            align-items: center;
-            gap: 20px;
-            padding: 20px;
-        }
-
-        .suit-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
-            width: 100%;
-            margin-bottom: 20px;
-        }
-
-        .card-container {
-            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
-            transition: transform 0.2s;
-        }
-        
-        .card-container:hover {
-            transform: translateY(-10px);
-        }
-
-        svg {
-            display: block;
-            border-radius: 10px;
-        }
-
-        h2 { 
-            width: 100%; 
-            text-align: center; 
-            color: #7dcfff; 
-            border-bottom: 1px solid #787c99; 
-            padding-bottom: 10px; 
-            margin: 0 0 20px 0;
-            font-size: 1.5em;
-        }
-    </style>
+    <link rel="stylesheet" href="./src/styles/main.css">
 </head>
+
 <body>
+    <div id="cyberdeck">
+        <!-- LEFT: Game Board -->
+        <div id="game-board">
+            <div id="ai-hand" class="hand-area"></div>
 
-<script>
-const SUITS = [
-    { name: 'Pik', symbol: '^', group: 'cold', color: '#7dcfff', ascii: `
-     .xxxxx.     
-    xxxxxxxxx    
-   xxxxxxxxxxx   
-  xxxxxxxxxxxxx  
-  xxxxx|x|xxxxx  
-   'xxx|x|xxx'   
-     xx|x|xx     
-    ---------    ` },
-    { name: 'Kreuz', symbol: '{#}', group: 'cold', color: '#7dcfff', ascii: `
-      .xxx.      
-     xxxxxxx     
- .xxx  'x'  xxx. 
-xxxxxxx|x|xxxxxxx
- 'xxx' |x| 'xxx' 
-      /xxx\\      
-     xxxxxxx     
-     -------     ` },
-    { name: 'Herz', symbol: '<3', group: 'warm', color: '#f7768e', ascii: `
-  .xxxxx. .xxxxx. 
- xxxxxxxx xxxxxxxx
- xxxxxxxxxxxxxxxxx
-  'xxxxxxxxxxxxx' 
-    'xxxxxxxxx'   
-      'xxxxx'     
-        'x'       
-         '        ` },
-    { name: 'Karo', symbol: '<>', group: 'warm', color: '#f7768e', ascii: `
-       .x.       
-     .xxxxx.     
-   .xxxxxxxxx.   
- .xxxxxxxxxxxxx. 
- 'xxxxxxxxxxxxx' 
-   'xxxxxxxxx'   
-     'xxxxx'     
-       'x'       ` }
-];
+            <div id="table-area">
+                <div id="mau-btn" onclick="game.toggleMau()">MAU</div>
+                <div class="deck-placeholder" onclick="game.drawCard()">DRAW DECK</div>
+                <div id="discard-pile"></div>
+            </div>
 
-const VALUES = ['A', 'K', 'D', 'B', '10', '9', '8', '7'];
+            <div id="player-hand" class="hand-area"></div>
+        </div>
 
-function createCard(suit, value) {
-    const isTwoDigits = value.length > 1;
-    return `
-    <div class="card-container">
-        <svg width="150" height="220" viewBox="0 0 150 220" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="0" width="150" height="220" rx="10" fill="#1a1b26" stroke="#787c99" stroke-width="2" />
-            
-            <defs>
-                <filter id="glow-${suit.name}">
-                    <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                    <feMerge>
-                        <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                </filter>
-            </defs>
+        <!-- RIGHT: Side Panel -->
+        <div id="side-panel">
+            <div class="panel-header">STATUS // NET_LINK</div>
+            <div id="status-bar">Initializing...</div>
 
-            <g fill="${suit.color}" font-family="Ubuntu Mono" font-weight="700" style="filter: url(#glow-${suit.name});">
-                <text x="10" y="25" font-size="22">${value}</text>
-                <text x="10" y="45" font-size="12">${suit.symbol}</text>
-                
-                <g transform="rotate(180, 75, 110)">
-                    <text x="10" y="25" font-size="22">${value}</text>
-                    <text x="10" y="45" font-size="12">${suit.symbol}</text>
-                </g>
-            </g>
+            <div class="panel-header">LOG // TERMINAL</div>
+            <div id="game-log"></div>
 
-            <g fill="${suit.color}" font-family="Ubuntu Mono" font-weight="700" text-anchor="middle">
-                <text x="75" y="${isTwoDigits ? 95 : 95}" font-size="50" style="filter: url(#glow-${suit.name});">${value}</text>
-                
-                <text x="75" y="125" font-size="7" font-weight="400" letter-spacing="1">
-                    ${suit.ascii.split('\n').map((line, i) => `<tspan x="75" dy="${i===0 ? 0 : 8}">${line}</tspan>`).join('')}
-                </text>
-            </g>
-        </svg>
-    </div>`;
-}
+            <div class="panel-header">INPUT // WISH_MATRIX</div>
+            <div id="wish-panel">
+                <!-- Wish buttons will appear here -->
+                <div class="wish-placeholder">WAITING_FOR_INPUT...</div>
+            </div>
+        </div>
+    </div>
 
-// Generate the whole deck with row wrapping
-SUITS.forEach(suit => {
-    // Create a container for this suit's row
-    const rowDiv = document.createElement('div');
-    rowDiv.className = 'suit-row';
-    
-    // Add the header to the row (or preceding it, but user asked for "below that")
-    // Let's allow the header to take full width within the flex container or be separate.
-    // Cleanest way: Append header to main div, then row div.
-    
-    // We can't strictly modify innerHTML of 'rowDiv' cleanly if using create element logic mixed with string.
-    // Let's stick to string building for simplicity as per original script style, 
-    // but wrapped in a div.
-    
-    let htmlContent = `<h2>${suit.name} Set</h2><div class="suit-row">`;
-    VALUES.forEach(value => {
-        htmlContent += createCard(suit, value);
-    });
-    htmlContent += `</div>`;
-    
-    document.body.innerHTML += htmlContent;
-});
-</script>
+    <!-- Still need overlay for Game Over / Terminator scanlines -->
+    <div id="modal-layer"></div>
 
+    <script type="module" src="./src/main.js"></script>
 </body>
+
 </html>
