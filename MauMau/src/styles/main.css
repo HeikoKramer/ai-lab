@@ -12,10 +12,32 @@ body {
 }
 
 /* --- Layout --- */
-#cyberdeck {
-    display: flex;
+#app-views {
     width: 100vw;
     height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+.view-screen {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+    background: #1a1b26;
+}
+
+.view-screen.hidden {
+    display: none !important;
+}
+
+#cyberdeck {
+    display: flex;
+    /* Always flex inside the view */
+    width: 100%;
+    height: 100%;
 }
 
 #game-board {
@@ -294,6 +316,43 @@ svg {
     pointer-events: auto;
 }
 
+/* New Human Win Screen */
+.human-win-overlay {
+    background: #000;
+    color: #4af626;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    pointer-events: auto;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.human-win-title {
+    font-size: 3em;
+    font-weight: bold;
+    text-shadow: 0 0 10px #4af626;
+    margin-bottom: 20px;
+    animation: glow 2s infinite alternate;
+}
+
+.human-win-sub {
+    font-size: 1.5em;
+    opacity: 0.8;
+}
+
+@keyframes glow {
+    from {
+        text-shadow: 0 0 10px #4af626;
+    }
+
+    to {
+        text-shadow: 0 0 20px #4af626, 0 0 40px #9ece6a;
+    }
+}
+
 .modal-activator {
     background: rgba(26, 27, 38, 0.95);
     border: 2px solid #9ece6a;
@@ -306,4 +365,452 @@ svg {
 .modal-title {
     font-size: 2em;
     margin-bottom: 20px;
+}
+
+/* --- Start Screen (CRT) --- */
+#start-screen {
+    /* Position handled by view-screen class */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #c0caf5;
+    /* Muted Text */
+    /* Strict Tokyo Night */
+    font-family: 'Courier New', Courier, monospace;
+    overflow: hidden;
+    /* Visual Overhaul */
+    background: #1a1b26 !important;
+    /* Strict Tokyo Night */
+}
+
+/* Ensure contents are centered */
+.crt-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    z-index: 5;
+    text-shadow: 0 0 5px #7dcfff, 0 0 10px #7dcfff;
+    transform: scale(1.1);
+}
+
+/* CRT Scanline Overlay */
+/* CRT Scanline Overlay - Updated to match requirement */
+.crt-overlay::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(to bottom, rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+    z-index: 2;
+    background-size: 100% 4px;
+    pointer-events: none;
+}
+
+.scanline {
+    width: 100%;
+    height: 100px;
+    z-index: 10;
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(125, 207, 255, 0.1) 50%, rgba(0, 0, 0, 0) 100%);
+    opacity: 0.1;
+    position: absolute;
+    bottom: 100%;
+    animation: scanline 10s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes scanline {
+    0% {
+        bottom: 100%;
+    }
+
+    80% {
+        bottom: 100%;
+    }
+
+    100% {
+        bottom: -100px;
+    }
+}
+
+.crt-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 5;
+    z-index: 5;
+    /* Removed heavy glow for sharpness */
+    /* text-shadow: 0 0 5px #4af626, 0 0 10px #4af626; */
+    transform: scale(1.1);
+}
+
+.ascii-conn {
+    font-size: 0.8em;
+    margin-bottom: 20px;
+    opacity: 0.7;
+    animation: flicker 2s infinite;
+}
+
+.ascii-title-detailed {
+    font-size: 8px;
+    /* Small font for giant block art */
+    line-height: 8px;
+    margin-bottom: 50px;
+    font-weight: bold;
+    white-space: pre;
+
+    /* Gradient Color Effect: Blue to Purple */
+    background: linear-gradient(to bottom, #7aa2f7, #bb9af7);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+
+    /* Removed heavy blur, subtle drop shadow only */
+    text-shadow: none;
+    filter: drop-shadow(0 0 2px rgba(122, 162, 247, 0.6));
+}
+
+.start-menu {
+    width: 600px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+}
+
+.menu-item {
+    font-size: 2em;
+    cursor: pointer;
+    position: relative;
+    padding-left: 30px;
+}
+
+.menu-item .hidden-trigger {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.menu-item .cursor {
+    position: absolute;
+    left: 0;
+    opacity: 0;
+}
+
+.menu-item.active {
+    color: #7dcfff;
+    /* Neon Cyan */
+    text-shadow: 0 0 5px rgba(125, 207, 255, 0.4);
+}
+
+.menu-item:hover {
+    color: #f7768e;
+    /* Magenta Glow on Hover */
+    text-shadow: 0 0 10px rgba(247, 118, 142, 0.6);
+}
+
+.menu-item.active .cursor {
+    opacity: 1;
+    animation: blink 0.5s step-end infinite;
+    color: #7dcfff;
+}
+
+.menu-item:hover .cursor {
+    opacity: 1;
+    animation: blink 0.5s step-end infinite;
+}
+
+.rule-box {
+    margin-top: 20px;
+    margin-top: 20px;
+    border: 2px solid #3d59a1;
+    /* Dark Blue Frame */
+    padding: 15px;
+    width: 100%;
+}
+
+.rule-header {
+    background: #000;
+    font-weight: bold;
+    margin-top: -25px;
+    padding: 0 10px;
+    display: inline-block;
+    color: #e0af68;
+    /* Tokyo Night Yellow */
+}
+
+.retro-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin-top: 10px;
+    font-size: 1.2em;
+    white-space: nowrap;
+    /* Prevent breaking */
+}
+
+.retro-toggle input {
+    display: none;
+}
+
+.retro-check {
+    margin-right: 15px;
+    position: relative;
+    display: inline-block;
+    width: 30px;
+    /* Fixed width to prevent jumping */
+    text-align: center;
+}
+
+.retro-toggle input:checked+.retro-check::after {
+    content: "X";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #7dcfff;
+    /* Cyan Check */
+}
+
+.retro-label {
+    color: #a9b1d6;
+}
+
+.credits {
+    margin-top: 50px;
+    font-size: 0.8em;
+    text-align: center;
+    opacity: 0.5;
+    color: #414868;
+}
+
+@keyframes flicker {
+    0% {
+        opacity: 0.9;
+    }
+
+    5% {
+        opacity: 0.5;
+    }
+
+    10% {
+        opacity: 0.9;
+    }
+
+    15% {
+        opacity: 0.1;
+    }
+
+    20% {
+        opacity: 0.9;
+    }
+
+    100% {
+        opacity: 0.9;
+    }
+}
+
+/* --- End Screens --- */
+#view-end-ai {
+    background: #000;
+    color: #ff0000;
+}
+
+#view-end-human {
+    background: radial-gradient(circle at center, #1f2335 0%, #1a1b26 100%);
+    color: #9ece6a;
+}
+
+/* Red Terminator Overlay (Now Full Screen Content) */
+.terminator-overlay {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 2em;
+    font-weight: bold;
+    text-shadow: 0 0 10px #ff0000;
+}
+
+.glitch-text {
+    animation: glitch 1s infinite;
+    text-align: center;
+    margin-bottom: 50px;
+}
+
+/* Green Utopia Overlay */
+.human-win-overlay {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.human-win-title {
+    font-size: 4em;
+    font-weight: bold;
+    text-shadow: 0 0 20px #4af626;
+    margin-bottom: 20px;
+    animation: glow 3s infinite alternate;
+}
+
+.human-win-sub {
+    font-size: 1.5em;
+    opacity: 0.8;
+    color: #7dcfff;
+    margin-bottom: 40px;
+    letter-spacing: 3px;
+}
+
+.secure-badge {
+    border: 2px solid #9ece6a;
+    padding: 10px 20px;
+    color: #9ece6a;
+    font-weight: bold;
+    box-shadow: 0 0 15px rgba(158, 206, 106, 0.4);
+    margin-bottom: 50px;
+}
+
+/* Reboot Buttons */
+.cyber-btn-red {
+    background: transparent;
+    border: 2px solid #ff0000;
+    color: #ff0000;
+    padding: 20px 50px;
+    font-family: inherit;
+    font-size: 1.5em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.cyber-btn-red:hover {
+    background: #ff0000;
+    color: #000;
+    box-shadow: 0 0 30px #ff0000;
+}
+
+.cyber-btn-green {
+    background: transparent;
+    border: 2px solid #9ece6a;
+    color: #9ece6a;
+    padding: 20px 50px;
+    font-family: inherit;
+    font-size: 1.5em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.cyber-btn-green:hover {
+    background: #9ece6a;
+    color: #1a1b26;
+    box-shadow: 0 0 30px #9ece6a;
+}
+
+/* CRT Clean (lighter scanlines) */
+.crt-overlay-clean::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+            rgba(0, 0, 0, 0.1) 50%);
+    z-index: 2;
+    background-size: 100% 4px;
+    pointer-events: none;
+}
+
+/* --- Reboot Loading Bar --- */
+.reboot-bar-container {
+    width: 60%;
+    height: 20px;
+    border: 2px solid;
+    margin-top: 40px;
+    position: relative;
+    padding: 2px;
+}
+
+.reboot-bar-red {
+    border-color: #ff0000;
+}
+
+.reboot-bar-green {
+    border-color: #9ece6a;
+}
+
+.reboot-progress {
+    height: 100%;
+    width: 0%;
+    animation: loadReboot 5s linear forwards;
+}
+
+.bg-red {
+    background: #ff0000;
+    box-shadow: 0 0 20px #ff0000;
+}
+
+.bg-green {
+    background: #9ece6a;
+    box-shadow: 0 0 20px #9ece6a;
+}
+
+@keyframes loadReboot {
+    0% {
+        width: 0%;
+    }
+
+    100% {
+        width: 100%;
+    }
+}
+
+.reboot-label {
+    margin-top: 10px;
+    font-size: 0.8em;
+    opacity: 0.7;
+    letter-spacing: 2px;
+    animation: blink 0.5s infinite;
+}
+
+/* --- Scanline Overlay (Global) --- */
+.scanline-overlay {
+    position: relative;
+    overflow: hidden;
+}
+
+.scanline-overlay::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(to bottom,
+            rgba(18, 16, 16, 0) 50%,
+            rgba(0, 0, 0, 0.25) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 10;
+    animation: scanline 6s linear infinite;
 }

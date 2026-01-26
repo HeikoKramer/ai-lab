@@ -4,41 +4,127 @@
 <head>
     <meta charset="UTF-8">
     <title>Tokyo Night Mau Mau - Hacker Deck</title>
+    <link rel="icon" type="image/png" href="./src/assets/favicon.png">
     <link rel="stylesheet" href="./src/styles/main.css">
 </head>
 
 <body>
-    <div id="cyberdeck">
-        <!-- LEFT: Game Board -->
-        <div id="game-board">
-            <div id="ai-hand" class="hand-area"></div>
+    <div id="app-views">
 
-            <div id="table-area">
-                <div id="mau-btn" onclick="game.toggleMau()">MAU</div>
-                <div class="deck-placeholder" onclick="game.drawCard()">DRAW DECK</div>
-                <div id="discard-pile"></div>
+        <!-- VIEW: START SCREEN -->
+        <div id="view-start" class="view-screen crt-overlay">
+            <div class="scanline"></div>
+            <div class="crt-content">
+                <pre class="ascii-conn">
+CONNECTING TO SERVER...
+ENCRYPTED CONNECTION ESTABLISHED
+                </pre>
+                <pre class="ascii-title-detailed">
+███╗   ███╗ █████╗ ██╗   ██╗███╗   ███╗█████╗ ██╗   ██╗
+████╗ ████║██╔══██╗██║   ██║████╗ ████║██╔══██╗██║   ██║
+██╔████╔██║███████║██║   ██║██╔████╔██║███████║██║   ██║
+██║╚██╔╝██║██╔══██║██║   ██║██║╚██╔╝██║██╔══██║██║   ██║
+██║ ╚═╝ ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║██║  ██║╚██████╔╝
+╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ 
+                </pre>
+
+                <div class="start-menu">
+                    <div class="menu-item active">
+                        <span class="cursor">></span> SYSTEM_START
+                        <button id="btn-start-game" class="hidden-trigger">START</button>
+                    </div>
+
+                    <div class="rule-box">
+                        <div class="rule-header">/// CONFIGURATION ///</div>
+                        <label class="retro-toggle">
+                            <input type="checkbox" id="rule-jack-on-jack">
+                            <span class="retro-check">[ ]</span>
+                            <span class="retro-label">PROTOCOL: NO_JACK_STACKING</span>
+                        </label>
+
+                        <label class="retro-toggle">
+                            <input type="checkbox" id="sound-toggle">
+                            <span class="retro-check">[ ]</span>
+                            <span class="retro-label">AUDIO_SYSTEM: ENABLED</span>
+                        </label>
+                    </div>
+
+                    <div class="credits">
+                        v2.0.77 // TOKYO_NIGHT_EDITION
+                        <br>COPYRIGHT (C) 2026 AI_LAB
+                    </div>
+                </div>
             </div>
-
-            <div id="player-hand" class="hand-area"></div>
         </div>
 
-        <!-- RIGHT: Side Panel -->
-        <div id="side-panel">
-            <div class="panel-header">STATUS // NET_LINK</div>
-            <div id="status-bar">Initializing...</div>
+        <!-- VIEW: GAME SCREEN -->
+        <div id="view-game" class="view-screen hidden">
+            <div id="cyberdeck">
+                <!-- LEFT: Game Board -->
+                <div id="game-board">
+                    <div id="ai-hand" class="hand-area"></div>
 
-            <div class="panel-header">LOG // TERMINAL</div>
-            <div id="game-log"></div>
+                    <div id="table-area">
+                        <div id="mau-btn" onclick="game.toggleMau()">MAU</div>
+                        <div class="deck-placeholder" onclick="game.drawCard()">DRAW DECK</div>
+                        <div id="discard-pile"></div>
+                    </div>
 
-            <div class="panel-header">INPUT // WISH_MATRIX</div>
-            <div id="wish-panel">
-                <!-- Wish buttons will appear here -->
-                <div class="wish-placeholder">WAITING_FOR_INPUT...</div>
+                    <div id="player-hand" class="hand-area"></div>
+                </div>
+
+                <!-- RIGHT: Side Panel -->
+                <div id="side-panel">
+                    <div class="panel-header">STATUS // NET_LINK</div>
+                    <div id="status-bar">Initializing...</div>
+
+                    <div class="panel-header">LOG // TERMINAL</div>
+                    <div id="game-log"></div>
+
+                    <div class="panel-header">INPUT // WISH_MATRIX</div>
+                    <div id="wish-panel">
+                        <div class="wish-placeholder">WAITING_FOR_INPUT...</div>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <!-- VIEW: END SCREEN - AI WIN (Terminator) -->
+        <div id="view-end-ai" class="view-screen hidden">
+            <div class="terminator-overlay crt-overlay">
+                <div class="scanline"></div>
+                <div class="glitch-text">
+                    HUMANITY TERMINATED.<br>
+                    SYSTEM OVERRIDE.
+                </div>
+                <div class="reboot-bar-container reboot-bar-red">
+                    <div class="reboot-progress bg-red"></div>
+                </div>
+                <div class="reboot-label">SYSTEM REBOOT INITIATED...</div>
+            </div>
+        </div>
+
+        <!-- VIEW: END SCREEN - HUMAN WIN (Utopia) -->
+        <div id="view-end-human" class="view-screen hidden">
+            <div class="human-win-overlay crt-overlay-clean">
+                <div class="scanline"></div>
+                <div class="human-win-title">HUMANITY SAVED</div>
+                <div class="human-win-sub">FUTURE RESTORED // SYSTEM SECURE</div>
+
+                <div class="secure-badge">
+                    [ SECURE ]
+                </div>
+
+                <div class="reboot-bar-container reboot-bar-green">
+                    <div class="reboot-progress bg-green"></div>
+                </div>
+                <div class="reboot-label">RESTORING DATA INTEGRITY...</div>
+            </div>
+        </div>
+
     </div>
 
-    <!-- Still need overlay for Game Over / Terminator scanlines -->
+    <!-- Modal Layer (For small popups if needed, but Game Over is now Full Screen) -->
     <div id="modal-layer"></div>
 
     <script type="module" src="./src/main.js"></script>

@@ -50,8 +50,8 @@ export class CardRenderer {
         <div class="card-container">
             <svg width="150" height="220" viewBox="0 0 150 220" xmlns="http://www.w3.org/2000/svg">
                 <rect x="0" y="0" width="150" height="220" rx="10" fill="#16161e" stroke="#565f89" stroke-width="2" />
-                <text x="75" y="110" fill="#2ac3de" font-family="Ubuntu Mono" font-size="20" text-anchor="middle" dominant-baseline="middle">TOKYO</text>
-                <text x="75" y="130" fill="#2ac3de" font-family="Ubuntu Mono" font-size="20" text-anchor="middle" dominant-baseline="middle">NIGHT</text>
+                <text x="75" y="90" fill="#2ac3de" font-family="Ubuntu Mono" font-size="40" font-weight="bold" text-anchor="middle" dominant-baseline="middle" style="filter: drop-shadow(0 0 5px #2ac3de);">MAU</text>
+                <text x="75" y="130" fill="#2ac3de" font-family="Ubuntu Mono" font-size="40" font-weight="bold" text-anchor="middle" dominant-baseline="middle" style="filter: drop-shadow(0 0 5px #2ac3de);">MAU</text>
             </svg>
         </div>`;
     }

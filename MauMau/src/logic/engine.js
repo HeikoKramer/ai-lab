@@ -20,12 +20,23 @@ export class MauMauEngine {
         this.drawCount = 0; // Accumulated draw count from 7s
         this.skipNext = false; // If 8 was played
         this.wishedSuit = null; // If Jack was played
+
+        // Rules
+        this.rules = {
+            jackOnJackForbidden: true // Default (Standard) - will be overridden by initGame
+        };
     }
 
     /**
      * Initialize a new game.
+     * @param {Object} rules - Optional rule overrides
      */
-    initGame() {
+    initGame(rules = {}) {
+        // Apply Rules
+        if (rules) {
+            this.rules = { ...this.rules, ...rules };
+            console.log("[Engine] Rules applied:", this.rules);
+        }
         // Reset State
         this.discardPile = [];
         this.drawCount = 0;
@@ -100,29 +111,38 @@ export class MauMauEngine {
 
         // 3. Jack Rules
 
-        // Prevent Jack on Jack (if top card is Jack, you cannot play a Jack)
-        // Note: topCard is Jack allows non-Jack moves normally, but here we strictly forbid playing Jack on Jack.
-        // Wait, standard rules say: "Bube auf Bube stinkt" -> forbidden.
+        // Rule: "Bube auf Bube stinkt" (Jack on Jack)
         if (topCard.value === 'B' && card.value === 'B') {
-            return false;
+            if (this.rules.jackOnJackForbidden) {
+                return false;
+            } else {
+                return true; // Allowed to break wish/rules with another Jack
+            }
         }
 
-        // If a suit is wished (from previous Jack), allow only that suit OR another Jack? 
-        // Spec says "Außer Bube auf Bube". So if wish is active, and I have a Jack, can I play it?
-        // No, because that would be Jack on Jack.
-        // So if wishedSuit is active, effectively top card is a virtual "Jack of wishedSuit".
-        // My previous logic allowed Jack on Wish. 
-        // Correct logic based on spec "außer Bube auf Bube":
-        // If Jack is played, wish is made. Next player must follow suit. Next player CANNOT play Jack.
-
+        // If a suit is wished, we must follow suit OR play a Jack (unless Jack on Jack forbidden, handled above)
         if (this.wishedSuit) {
-            if (card.value === 'B') return false; // explicit forbid Jack on Wish
+            // If I play a Jack on a Wish, it's generally allowed (Jack breaks wish), 
+            // UNLESS top card is a virtual Jack. But real world:
+            // Main rule: You can play Jack on anything.
+            // Exception: "Bube auf Bube" (if active).
+            // Since we checked Bube on Bube above, if we are here and have a Jack, it is valid on a Wish.
+            if (card.value === 'B') return true;
+
             if (card.suit === this.wishedSuit) return true;
             return false;
         }
 
-        // Normal play (no wish active): Jack allowed on anything (except on Jack, handled above)
+        // Normal play: Jack is Wildcard (can be played on anything)
         if (card.value === 'B') {
+            return true;
+        }
+
+        // Special Case: Start Jack (No Wish active yet)
+        // Player determines suit by playing any card.
+        // If top is Jack and NO wish is set, it means it's the start card (or previously cleared).
+        // (Usually playing a Jack sets a wish, so this state implies "Fresh Start Jack").
+        if (topCard.value === 'B' && !this.wishedSuit) {
             return true;
         }
 
